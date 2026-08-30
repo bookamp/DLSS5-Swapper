@@ -38,8 +38,7 @@ Grab either one from the [**Releases**](../../releases) page:
 | **DLSS5-Swapper-Setup-1.1.0.exe** | 212 MB | Installer — start menu and desktop shortcuts, clean uninstall |
 | **DLSS5-Swapper-1.1.0-portable.exe** | 212 MB | Single file, no installation |
 
-Windows 10/11 64-bit and an NVIDIA RTX card — **RTX 20, 30, 40 and 50 series**.
-Nothing else to install.
+Windows 10/11 64-bit and an NVIDIA RTX card. Nothing else to install.
 
 > The builds are not code-signed, so SmartScreen shows
 > *"Windows protected your PC"* the first time. Click **More info → Run anyway**.
