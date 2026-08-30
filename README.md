@@ -40,6 +40,9 @@ Grab either one from the [**Releases**](../../releases) page:
 
 Windows 10/11 64-bit and an NVIDIA RTX card. Nothing else to install.
 
+> Since v1.1.0 the bundled `nvngx_dlssnr.dll` is the custom build published by
+> the RenoDX author, which he states adds **RTX 40 and 50 series** support.
+
 > The builds are not code-signed, so SmartScreen shows
 > *"Windows protected your PC"* the first time. Click **More info → Run anyway**.
 
