@@ -5,3 +5,4 @@ build/icon.ico
 build/icon.png
 *.log
 docs/nexus/
+vendor/

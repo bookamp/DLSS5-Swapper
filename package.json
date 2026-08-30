@@ -1,6 +1,6 @@
 {
   "name": "dlss5-swapper",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "One-click DLSS 5 (Neural Rendering) installer for DirectX 12 games",
   "main": "main.js",
   "scripts": {

@@ -18,7 +18,10 @@ const DEFAULT_SOURCES = [
   path.join(os.homedir(), 'Desktop', 'dlss 5 swapper')
 ].filter(Boolean);
 
+// vendor/ comes first: a copy that lives with the project cannot be cleaned
+// out of Downloads between builds, which is how one release shipped without it.
 const RESHADE_DIRS = [
+  path.join(ROOT, 'vendor'),
   path.join(os.homedir(), 'Downloads'),
   path.join(os.homedir(), 'OneDrive', 'Downloads'),
   path.join(os.homedir(), 'Desktop')
@@ -111,11 +114,14 @@ if (!addon) {
 copyFile(addon, path.join(PAYLOAD, path.basename(addon)));
 
 const reshade = findReShadeSetup();
-if (reshade) {
-  copyFile(reshade.file, path.join(PAYLOAD, reshade.name));
-} else {
-  console.warn('\n! ReShade_Setup_*_Addon.exe not found — the build will ask the user for it.');
+if (!reshade) {
+  // Warning-and-continue here once shipped a build that silently could not
+  // install ReShade, which is half of what the app does. Stop instead.
+  console.error('\nReShade_Setup_*_Addon.exe not found in Downloads or Desktop.');
+  console.error('Get the Addon build from https://reshade.me, put it in Downloads, and run again.');
+  process.exit(1);
 }
+copyFile(reshade.file, path.join(PAYLOAD, reshade.name));
 
 const total = fs
   .readdirSync(PAYLOAD, { recursive: true })
