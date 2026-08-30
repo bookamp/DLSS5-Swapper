@@ -91,6 +91,18 @@ for (const name of fs.readdirSync(source.streamline)) {
   copyFile(path.join(source.streamline, name), path.join(PAYLOAD, 'streamline', name));
 }
 
+// A loose DLL dropped in the source root wins over the copy inside streamline/,
+// so replacing one file there is enough to change what the build ships.
+let overrides = 0;
+for (const name of fs.readdirSync(source.dir)) {
+  if (!/^(nvngx_[a-z_]*|sl\.[a-z_]+)\.dll$/i.test(name)) continue;
+  const from = path.join(source.dir, name);
+  if (!fs.statSync(from).isFile()) continue;
+  copyFile(from, path.join(PAYLOAD, 'streamline', name));
+  overrides++;
+}
+if (overrides) console.log(`  (${overrides} override${overrides > 1 ? 's' : ''} from the source root)`);
+
 const addon = findAddon(source.dir);
 if (!addon) {
   console.error('لم يتم العثور على ملف .addon64 / add-on not found.');
