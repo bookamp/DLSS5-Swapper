@@ -1,22 +1,35 @@
 'use strict';
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
-contextBridge.exposeInMainWorld('api', {
+contextBridge.exposeInMainWorld('lab', {
   boot: () => ipcRenderer.invoke('boot'),
-  setLanguage: (lang) => ipcRenderer.invoke('set-language', lang),
-  pickGame: () => ipcRenderer.invoke('pick-game'),
-  pickSource: () => ipcRenderer.invoke('pick-source'),
-  pickReShade: () => ipcRenderer.invoke('pick-reshade'),
-  resetPaths: () => ipcRenderer.invoke('reset-paths'),
-  scanGame: (dir) => ipcRenderer.invoke('scan-game', dir),
-  apply: (config) => ipcRenderer.invoke('apply', config),
-  restore: (dir) => ipcRenderer.invoke('restore', dir),
-  openPath: (target) => ipcRenderer.invoke('open-path', target),
+  setLang: (lang) => ipcRenderer.invoke('set-lang', lang),
+  setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
   window: (action) => ipcRenderer.invoke('window', action),
-  // Electron no longer exposes File.path to the renderer, so dropped folders
-  // have to be resolved here in the preload.
-  pathForFile: (file) => {
-    try { return webUtils.getPathForFile(file); } catch { return null; }
-  },
-  onLog: (handler) => ipcRenderer.on('log', (_event, event) => handler(event))
+  library: () => ipcRenderer.invoke('library'),
+  scan: (dir) => ipcRenderer.invoke('scan', dir),
+  history: () => ipcRenderer.invoke('history'),
+  settings: () => ipcRenderer.invoke('settings'),
+  addFolder: () => ipcRenderer.invoke('add-folder'),
+  removeFolder: (dir) => ipcRenderer.invoke('remove-folder', dir),
+  addGame: () => ipcRenderer.invoke('add-game'),
+  addGameByPath: (dir) => ipcRenderer.invoke('add-game-path', dir),
+  setPoster: (dir) => ipcRenderer.invoke('set-poster', dir),
+  hide: (dir) => ipcRenderer.invoke('hide', dir),
+  reset: () => ipcRenderer.invoke('reset'),
+  open: (dir) => ipcRenderer.invoke('open', dir),
+  artStatus: () => ipcRenderer.invoke('art-status'),
+  artFetch: (dir, name, appid) => ipcRenderer.invoke('art-fetch', dir, name, appid),
+  touch: (dir) => ipcRenderer.invoke('touch', dir),
+  recents: () => ipcRenderer.invoke('recents'),
+  details: (dir) => ipcRenderer.invoke('details', dir),
+  install: (dir, exePath) => ipcRenderer.invoke("install", dir, exePath),
+  addons: () => ipcRenderer.invoke('addons'),
+  addonToggle: (file, on) => ipcRenderer.invoke('addon-toggle', file, on),
+  addonPick: () => ipcRenderer.invoke('addon-pick'),
+  addonSave: (entry) => ipcRenderer.invoke('addon-save', entry),
+  addonRemove: (file) => ipcRenderer.invoke('addon-remove', file),
+  restoreGame: (dir) => ipcRenderer.invoke('restore', dir),
+  onJob: (handler) => ipcRenderer.on('job', (_e, event) => handler(event)),
+  pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return null; } }
 });

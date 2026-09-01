@@ -1,7 +1,7 @@
 {
   "name": "dlss5-swapper",
-  "version": "1.1.1",
-  "description": "One-click DLSS 5 (Neural Rendering) installer for DirectX 12 games",
+  "version": "2.0.0",
+  "description": "DLSS 5 (Neural Rendering) for your games - a library that finds them, and one click to install",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -24,12 +24,20 @@
       "main.js",
       "preload.js",
       "src/**/*",
+      "assets/**/*",
       "package.json"
     ],
     "extraResources": [
       {
         "from": "payload",
         "to": "payload",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "addons",
+        "to": "addons",
         "filter": [
           "**/*"
         ]

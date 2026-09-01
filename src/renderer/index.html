@@ -1,169 +1,169 @@
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html lang="en" dir="ltr" data-theme="light">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data:" />
   <title>DLSS 5 Swapper</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <!-- Slow-drifting light behind the whole app. Purely decorative. -->
-  <div class="aurora" aria-hidden="true">
-    <span class="blob b1"></span>
-    <span class="blob b2"></span>
-    <span class="blob b3"></span>
-    <span class="blob b4"></span>
-  </div>
+  <div class="shell">
+    <!-- ---------------- sidebar ---------------- -->
+    <aside class="sidebar">
+      <div class="brand" id="brand"></div>
 
-  <!-- The window has no frame: this header is the drag handle and also holds
-       the window controls, so the app name is never printed twice. -->
-  <header class="topbar" id="titlebar">
-    <div class="brand">
-      <div class="logo-wrap"><img class="logo" src="icon.png" alt="" /></div>
-      <div>
-        <h1 data-i18n="appTitle">DLSS 5 Swapper</h1>
-        <p class="sub" data-i18n="appSubtitle"></p>
-      </div>
-    </div>
-    <div class="topbar-actions">
-      <div class="lang-switch" id="langSwitch">
-        <button data-lang="en">EN</button>
-        <button data-lang="ar">ع</button>
-      </div>
-      <button id="settingsBtn" class="ghost icon-btn" data-i18n-title="settings">
-        <svg viewBox="0 0 24 24" class="ico"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.51-1.1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.56 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg>
-        <span data-i18n="settings"></span>
-      </button>
-      <div class="win-controls">
-        <button id="minBtn" class="tb-btn" aria-label="Minimize">
-          <svg viewBox="0 0 12 12"><path d="M2 6h8" /></svg>
+      <nav class="nav" id="nav">
+        <button class="nav-item active" data-view="home">
+          <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V20h14V9.5"/></svg>
+          <span data-i18n="navHome">Home</span><i class="dot"></i>
         </button>
-        <button id="closeBtn" class="tb-btn danger" aria-label="Close">
-          <svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6" /></svg>
+        <button class="nav-item" data-view="games">
+          <svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="11" rx="4"/><path d="M7 11v3m-1.5-1.5h3M16 12h.01M18.5 14h.01"/></svg>
+          <span data-i18n="navGames">Games</span><i class="dot"></i>
+        </button>
+        <button class="nav-item" data-view="addons">
+          <svg viewBox="0 0 24 24"><path d="M10 4.5a1.9 1.9 0 1 1 3.8 0V6H17a1 1 0 0 1 1 1v3.2h1.5a1.9 1.9 0 1 1 0 3.8H18V17a1 1 0 0 1-1 1h-3.2v1.5a1.9 1.9 0 1 1-3.8 0V18H7a1 1 0 0 1-1-1v-3.2H4.5a1.9 1.9 0 1 1 0-3.8H6V7a1 1 0 0 1 1-1h3z"/></svg>
+          <span data-i18n="navAddons">Add-ons</span><i class="dot"></i>
+        </button>
+        <button class="nav-item" data-view="history">
+          <svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5M12 7v5l3.5 2"/></svg>
+          <span data-i18n="navHistory">History</span><i class="dot"></i>
+        </button>
+        <button class="nav-item" data-view="settings">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.5 14.5a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.4 1z"/></svg>
+          <span data-i18n="navSettings">Settings</span><i class="dot"></i>
+        </button>
+        <button class="nav-item" data-view="about">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-5M12 8h.01"/></svg>
+          <span data-i18n="navAbout">About</span><i class="dot"></i>
+        </button>
+      </nav>
+
+      <div class="status-card">
+        <div class="status-line"><i class="live"></i><b id="statusText" data-i18n="ready">Ready</b></div>
+        <p class="status-sub">DLSS 5 Swapper</p>
+        <p class="status-sub" id="statusVersion"></p>
+        <div class="bar"><i id="statusBar" style="width:22%"></i></div>
+      </div>
+    </aside>
+
+    <!-- ---------------- main ---------------- -->
+    <div class="main">
+      <div class="toolbar">
+        <button id="themeBtn" class="round" title="Theme">
+          <svg viewBox="0 0 24 24" id="themeIcon"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/></svg>
+        </button>
+        <div class="lang-wrap">
+          <button id="langBtn" class="pill">
+            <span id="langLabel">EN</span>
+            <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="lang-menu hidden" id="langMenu"></div>
+        </div>
+        <button class="win" id="winMin" title="Minimize" aria-label="Minimize">
+          <svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg>
+        </button>
+        <button class="win close" id="winClose" title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg>
         </button>
       </div>
-    </div>
-  </header>
 
-  <main>
-    <!-- Landing -->
-    <section id="dropZone" class="dropzone">
-      <svg class="dz-icon" viewBox="0 0 48 48">
-        <path d="M6 14a3 3 0 0 1 3-3h9l4 4h17a3 3 0 0 1 3 3v18a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3z"/>
-        <path class="dz-arrow" d="M24 21v11m0 0l-4.5-4.5M24 32l4.5-4.5"/>
-      </svg>
-      <h2 data-i18n="dropTitle"></h2>
-      <p class="dz-or"><span data-i18n="or"></span></p>
-      <button id="pickGameBtn" class="primary" data-i18n="pickGame"></button>
-      <p id="lastGameHint" class="last-game hidden"></p>
-    </section>
-
-    <!-- Result -->
-    <section id="result" class="hidden">
-      <div class="card game-card">
-        <div class="game-head">
-          <div class="game-id">
-            <h2 id="gameName">—</h2>
-            <p id="gameDir" class="path"></p>
+      <!-- HOME -->
+      <section class="view active" id="view-home">
+        <div class="glass dropzone" id="dropZone">
+          <div class="dz-circle">
+            <svg viewBox="0 0 24 24"><path d="M3 8a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
           </div>
-          <span id="apiBadge" class="badge">—</span>
+          <h2 data-i18n="dropTitle">Drop game folder here</h2>
+          <p class="or" data-i18n="or">or</p>
+          <button class="glass-btn" id="browseBtn" data-i18n="browse">Browse Folder</button>
         </div>
 
-        <div class="swap" id="swapSummary"></div>
+        <div class="section-head">
+          <h3 data-i18n="recentTitle">Recent Games</h3>
+          <button class="link" data-view="games"><span data-i18n="viewAll">View All</span> <svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+        </div>
+        <div class="recents" id="recents"></div>
 
-        <div class="chips" id="chips"></div>
+        <div class="section-head">
+          <h3 data-i18n="logTitle">Activity Log</h3>
+          <button class="ghost sm" id="clearLog" data-i18n="clear">Clear</button>
+        </div>
+        <div class="glass log" id="log"></div>
+      </section>
 
-        <div class="field" id="exeField">
-          <span data-i18n="exeLabel"></span>
-          <div class="select-wrap">
-            <button type="button" class="select" id="exeSelect" aria-haspopup="listbox" aria-expanded="false">
-              <span class="select-value" id="exeValue"></span>
-              <svg class="chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
-            <div class="select-menu hidden" id="exeMenu" role="listbox"></div>
+      <!-- GAMES -->
+      <section class="view" id="view-games">
+        <div class="section-head">
+          <h3><span data-i18n="gamesTitle">Games</span> <span class="count" id="gamesCount"></span></h3>
+          <div class="row">
+            <button class="ghost sm" id="addGame" data-i18n="addGame">Add a game</button>
+            <button class="ghost sm" id="addFolder" data-i18n="addFolder">Add a folder</button>
+            <button class="glass-btn sm" id="rescan" data-i18n="rescan">Rescan</button>
           </div>
         </div>
+        <div id="groups"></div>
+      </section>
 
-        <details class="files">
-          <summary id="filesSummary"></summary>
-          <div id="filesList"></div>
-        </details>
-
-        <div class="options" id="options">
-          <label class="switch"><input type="checkbox" id="optReShade" checked /><span class="track"></span><span class="switch-label" data-i18n="optReShade"></span></label>
-          <label class="switch"><input type="checkbox" id="optAddDlss" checked /><span class="track"></span><span class="switch-label" data-i18n="optAddDlss"></span></label>
-          <label class="switch"><input type="checkbox" id="optStreamline" /><span class="track"></span><span class="switch-label" data-i18n="optStreamline"></span></label>
-          <label class="switch hidden" id="optUpgradeRow"><input type="checkbox" id="optUpgradeReShade" /><span class="track"></span><span class="switch-label" id="optUpgradeLabel"></span></label>
+      <!-- HISTORY -->
+      <section class="view" id="view-addons">
+        <div class="section-head">
+          <h3 data-i18n="navAddons">Add-ons</h3>
+          <button class="ghost sm" id="addonAdd" data-i18n="setAdd">Add</button>
         </div>
+        <p class="hint" id="addonHint" data-i18n="addonHint"></p>
+        <div id="addonList"></div>
+      </section>
 
-        <div id="warnBox" class="warn hidden"></div>
-      </div>
-    </section>
+      <section class="view" id="view-history">
+        <div class="section-head"><h3 data-i18n="navHistory">History</h3></div>
+        <div class="glass" id="history"></div>
+      </section>
 
-    <section id="logCard" class="card log-card hidden">
-      <div class="log-head">
-        <b data-i18n="logTitle"></b>
-        <button id="openGameBtn" class="ghost small" data-i18n="openGameFolder"></button>
-      </div>
-      <pre id="log"></pre>
-    </section>
-  </main>
+      <!-- SETTINGS -->
+      <section class="view" id="view-settings">
+        <div class="section-head"><h3 data-i18n="navSettings">Settings</h3></div>
+        <div class="glass pad" id="settings"></div>
+      </section>
 
-  <!-- Docked so the primary action never scrolls out of reach. -->
-  <div class="action-bar hidden" id="actionBar">
-    <div class="action-inner">
-      <button id="applyBtn" class="primary big">
-        <span class="spinner"></span>
-        <span id="applyLabel" data-i18n="apply"></span>
-      </button>
-      <button id="restoreBtn" class="danger hidden" data-i18n="restoreBtn"></button>
-      <button id="resetBtn" class="ghost" data-i18n="anotherGame"></button>
+      <!-- ABOUT -->
+      <section class="view" id="view-about">
+        <div class="section-head"><h3 data-i18n="navAbout">About</h3></div>
+        <div class="glass pad about">
+          <p><b data-i18n="aboutTitle">DLSS 5 Swapper</b></p>
+          <p data-i18n="aboutBody"></p>
+          <p class="dim" data-i18n="aboutBy">Built by Rakan Alkhaldi</p>
+        </div>
+      </section>
     </div>
   </div>
 
-  <!-- Settings sheet -->
-  <div id="settingsOverlay" class="overlay hidden">
-    <div class="sheet" id="settingsPanel">
-      <div class="sheet-head">
-        <b data-i18n="settings"></b>
-        <button id="closeSettingsBtn" class="tb-btn"><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></svg></button>
-      </div>
-
-      <div class="setting">
-        <div class="setting-text">
-          <b data-i18n="sourceLabel"></b>
-          <p id="sourcePath" class="path">—</p>
-          <p id="sourceStatus" class="hint">—</p>
-        </div>
-        <div class="setting-actions">
-          <span id="sourceBundled" class="pill hidden" data-i18n="bundled"></span>
-          <button id="pickSourceBtn" class="ghost small" data-i18n="change"></button>
-        </div>
-      </div>
-
-      <div class="setting">
-        <div class="setting-text">
-          <b data-i18n="reshadeLabel"></b>
-          <p id="reshadePath" class="path">—</p>
-        </div>
-        <div class="setting-actions">
-          <span id="reshadeBundled" class="pill hidden" data-i18n="bundled"></span>
-          <button id="pickReshadeBtn" class="ghost small" data-i18n="change"></button>
-        </div>
-      </div>
-
-      <div class="sheet-foot">
-        <div>
-          <p class="hint" id="appVersionLine"></p>
-          <p class="hint author" data-i18n="author"></p>
-        </div>
-        <button id="resetPathsBtn" class="ghost small" data-i18n="useBundled"></button>
+  <!-- game detail sheet -->
+  <div class="overlay hidden" id="dlgOverlay">
+    <div class="dialog">
+      <h3 data-i18n="addonAddTitle">Add an add-on</h3>
+      <div class="dlg-file" id="dlgFile"></div>
+      <label class="dlg-label" for="dlgName" data-i18n="addonName">Name</label>
+      <input class="dlg-input" id="dlgName" type="text" spellcheck="false">
+      <label class="dlg-label" for="dlgDesc" data-i18n="addonDesc">Description</label>
+      <textarea class="dlg-input" id="dlgDesc" rows="4" spellcheck="false"></textarea>
+      <div class="dlg-hint" data-i18n="addonDescHint"></div>
+      <label class="dlg-label" for="dlgTag" data-i18n="addonTag">Tag</label>
+      <input class="dlg-input" id="dlgTag" type="text" spellcheck="false">
+      <div class="dlg-actions">
+        <button class="ghost sm" id="dlgCancel" data-i18n="cancel">Cancel</button>
+        <button class="glass-btn sm" id="dlgSave" data-i18n="setAdd">Add</button>
       </div>
     </div>
   </div>
 
-  <div id="toast" class="toast hidden"></div>
+  <div class="overlay hidden" id="overlay">
+    <div class="sheet" id="sheet"></div>
+  </div>
+
   <script src="i18n.js"></script>
+  <script src="i18n-extra.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

@@ -113,6 +113,36 @@ if (!addon) {
 }
 copyFile(addon, path.join(PAYLOAD, path.basename(addon)));
 
+// The extra RenoDX builds ride along too, so the Add-ons screen has something
+// in it on a machine that has never seen this project. Each folder beside the
+// project that holds a .addon64 contributes its build; the base one in payload/
+// is the app's own and is not repeated here.
+const EXTRAS = path.join(ROOT, 'addons');
+fs.rmSync(EXTRAS, { recursive: true, force: true });
+const base = path.basename(addon).toLowerCase();
+let extras = 0;
+for (const dir of [path.resolve(ROOT, '..'), ...DEFAULT_SOURCES]) {
+  let entries = [];
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    const sub = path.join(dir, e.name);
+    let files = [];
+    try { files = fs.readdirSync(sub).filter((f) => /\.addon(64)?$/i.test(f)); } catch { continue; }
+    for (const f of files) {
+      const from = path.join(sub, f);
+      // Same bytes as the shipped base means it is the base, not an extra.
+      if (fs.readFileSync(from).equals(fs.readFileSync(addon))) continue;
+      const dest = path.join(EXTRAS, f);
+      if (fs.existsSync(dest)) continue;
+      copyFile(from, dest);
+      extras++;
+    }
+  }
+  if (extras) break;
+}
+console.log(`  (${extras} extra add-on build${extras === 1 ? '' : 's'} bundled)`);
+
 const reshade = findReShadeSetup();
 if (!reshade) {
   // Warning-and-continue here once shipped a build that silently could not
