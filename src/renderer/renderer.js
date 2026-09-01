@@ -77,7 +77,9 @@ function ago(ts) {
 // payload; that is what the pip reports.
 function isReady(g) {
   const s = g && g.cached;
-  return Boolean(s && s.addon && s.dlss && state.newDlss && s.dlss === state.newDlss);
+  return Boolean(s && s.addon && (
+    s.bitness === 32 || (s.dlss && state.newDlss && s.dlss === state.newDlss)
+  ));
 }
 
 function renderRecent() {
@@ -108,6 +110,7 @@ const REASONS = {
   installer: 'rInstaller',
   'no-exe': 'rNoExe',
   'no-graphics-exe': 'rNoGraphics',
+  'xbox-protected': 'rXboxProtected',
   error: 'rError'
 };
 const reasonText = (code) => (code ? (REASONS[code] ? t(REASONS[code]) : code) : null);
@@ -266,8 +269,14 @@ $('dlgSave').onclick = async () => {
 async function renderSettings() {
   const info = await window.lab.settings();
   $('settings').innerHTML = `
-    <div class="set-row"><div><div class="k">${t('setRoots')}</div><div class="v">${
-        (info.roots || []).map(esc).join('<br>') || '—'}</div></div>
+    <div class="set-row"><div><div class="k">${t('setRoots')}</div>${
+        (info.roots || []).length
+          ? `<div class="paths">${info.roots.map((f) => `
+              <div class="path-row"><span>${esc(f)}</span>
+                <button class="drop" data-unroot="${esc(f)}" title="${t('addonRemove')}">
+                  <svg viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
+                </button></div>`).join('')}</div>`
+          : `<div class="v">—</div>`}</div>
       <span class="d">${(info.roots || []).length}</span></div>
     <div class="set-row"><div><div class="k">${t('setFolders')}</div>
         ${info.folders.length
@@ -284,6 +293,14 @@ async function renderSettings() {
     <div class="set-row"><div><div class="k">${t('setPosters')}</div><div class="v">${esc(info.posterDir)}</div></div>
       <span class="d">${t('setSaved', info.posterCount)}</span></div>`;
   $('setAddFolder').onclick = async () => { if (await window.lab.addFolder()) load(); };
+  for (const b of $('settings').querySelectorAll('[data-unroot]')) {
+    b.onclick = async () => {
+      b.disabled = true;
+      await window.lab.excludeRoot(b.dataset.unroot);
+      renderSettings();
+      load();
+    };
+  }
   // A folder added for a quick look has to be removable, or the library is
   // stuck with it.
   for (const b of $('settings').querySelectorAll('[data-unfolder]')) {
@@ -389,7 +406,7 @@ function dlssValue(have, next, upToDate) {
     `<span class="arrow">→</span><span class="on">${esc(next)}</span>`;
 }
 
-const exeLine = (e) => `${e.rel}  —  ${e.apiLabel}  —  ${MB(e.size)}`;
+const exeLine = (e) => `${e.rel}  —  ${e.apiLabel}  —  ${e.bitness || '?'}-bit  —  ${MB(e.size)}`;
 
 function chosenExe(d, dir) {
   const want = exeChoice.get(dir);
@@ -415,7 +432,7 @@ function exePicker(d, dir) {
                     data-path="${esc(e.path)}" role="option" title="${esc(e.rel)}">
               <span class="tick">${e.path === chosen.path ? '✓' : ''}</span>
               <span class="exe-name">${esc(e.rel)}</span>
-              <span class="exe-meta"><span>${esc(e.apiLabel)}</span><span>${MB(e.size)}</span></span>
+              <span class="exe-meta"><span>${esc(e.apiLabel)}</span><span>${e.bitness || '?'}-bit · ${MB(e.size)}</span></span>
             </button>`).join('')}
         </div>
       </div>
@@ -446,11 +463,11 @@ async function openSheet(dir) {
   const info = art && !art.error && !art.none ? art : null;
   const cover = (info && info.cover) || (g.poster && g.poster.tall ? g.poster.url : null);
   const hero = (info && info.hero) || (g.poster && !g.poster.tall ? g.poster.url : null);
-  const upToDate = d.newDlss && d.files.some((f) => /^nvngx_dlss\.dll$/i.test(f.name) && f.version === d.newDlss);
+  const upToDate = Boolean(d.newDlss && d.currentDlss && d.currentDlss.version === d.newDlss);
   // With a picker on screen the executable already has its own row, so the
   // fact tile would only repeat it.
   const pick = chosenExe(d, dir);
-  const inGameDlss = (d.files.find((f) => /^nvngx_dlss\.dll$/i.test(f.name)) || {}).version || null;
+  const inGameDlss = (d.currentDlss && d.currentDlss.version) || null;
   const showExeFact = d.exes.length < 2;
 
   $('sheet').innerHTML = `
@@ -475,6 +492,7 @@ async function openSheet(dir) {
 
       <div class="specs">
         ${showExeFact && pick ? spec(t('fExe'), esc(pick.rel.split(/[\/]/).pop()), null, pick.rel) : ''}
+        ${pick ? spec(t('fArchitecture'), `${pick.bitness || '?'}-bit`) : ''}
         ${spec(t('fApi'), esc((pick && pick.apiLabel) || reasonText(d.reason) || '—'), pick && pick.api === 'dxgi' ? 'on' : 'off')}
         ${spec('DLSS', dlssValue(inGameDlss, d.newDlss, upToDate))}
         ${spec(t('fAddon'), esc(d.addon ? t('installed') : t('notPresent')), d.addon ? 'on' : 'off')}

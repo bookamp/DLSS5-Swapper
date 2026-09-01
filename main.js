@@ -9,7 +9,7 @@ const { pathToFileURL } = require('url');
 const crypto = require('crypto');
 
 const { scanGame } = require('./src/core/scan.js');
-const { discover, folder, dedupe } = require('./src/library');
+const { discover, folder, dedupe, isInside } = require('./src/library');
 const art = require('./src/steamart');
 const { applySwap, restore, backupRoot } = require('./src/core/apply.js');
 const { scanSource } = require('./src/core/scan.js');
@@ -182,7 +182,7 @@ function loadState() {
   } catch {
     // Nothing seeded: the drive sweep finds game libraries on its own, and a
     // path from the machine this was written on means nothing anywhere else.
-    return { folders: [], manual: [], posters: {}, hidden: [], scans: {} };
+    return { folders: [], excludedRoots: [], manual: [], posters: {}, hidden: [], scans: {} };
   }
 }
 
@@ -310,7 +310,8 @@ ipcMain.handle('settings', () => {
   try { posterCount = fs.readdirSync(posterDir()).length; } catch {}
   return {
     folders: state.folders, stateFile: stateFile(), posterDir: posterDir(), posterCount,
-    roots: lastRoots
+    roots: lastRoots,
+    excludedRoots: state.excludedRoots || []
   };
 });
 
@@ -330,7 +331,7 @@ let lastRoots = [];
 
 ipcMain.handle('library', () => {
   const state = loadState();
-  const found = discover(state.folders);
+  const found = discover(state.folders, true, state.excludedRoots || []);
   lastRoots = found.roots;
   const games = found.games.concat(
     state.manual
@@ -361,10 +362,11 @@ ipcMain.handle('scan', async (_event, dir) => {
   const key = keyFor(dir);
   try {
     const scan = await scanGame(dir);
-    const dlss = scan.dlssFiles.find((f) => /^nvngx_dlss\.dll$/i.test(f.name));
+    const dlss = scan.primaryDlss;
     const result = {
       ok: Boolean(scan.chosen),
       api: scan.chosen ? scan.chosen.apiLabel : null,
+      bitness: scan.chosen ? scan.chosen.bitness : null,
       dx12: Boolean(scan.chosen && scan.chosen.apiLabel === 'DirectX 12'),
       exe: scan.chosen ? scan.chosen.rel : null,
       reason: scan.emptyReason || null,
@@ -388,6 +390,9 @@ ipcMain.handle('add-folder', async () => {
   if (res.canceled) return null;
   const state = loadState();
   if (!state.folders.includes(res.filePaths[0])) state.folders.push(res.filePaths[0]);
+  state.excludedRoots = (state.excludedRoots || []).filter(
+    (root) => path.resolve(root).toLowerCase() !== path.resolve(res.filePaths[0]).toLowerCase()
+  );
   saveState(state);
   return res.filePaths[0];
 });
@@ -395,6 +400,32 @@ ipcMain.handle('add-folder', async () => {
 ipcMain.handle('remove-folder', (_event, dir) => {
   const state = loadState();
   state.folders = state.folders.filter((f) => f !== dir);
+  state.excludedRoots = state.excludedRoots || [];
+  if (!state.excludedRoots.some((root) => path.resolve(root).toLowerCase() === path.resolve(dir).toLowerCase())) {
+    state.excludedRoots.push(dir);
+  }
+  lastRoots = lastRoots.filter(
+    (root) => path.resolve(root).toLowerCase() !== path.resolve(dir).toLowerCase()
+  );
+  saveState(state);
+  return true;
+});
+
+// Auto-discovered roots used to be display-only, so unwanted locations came
+// back on every scan. Excluding one removes only its library entries; no file
+// or folder on disk is changed.
+ipcMain.handle('exclude-root', (_event, dir) => {
+  const state = loadState();
+  state.excludedRoots = state.excludedRoots || [];
+  if (!state.excludedRoots.some((root) => path.resolve(root).toLowerCase() === path.resolve(dir).toLowerCase())) {
+    state.excludedRoots.push(dir);
+  }
+  state.folders = state.folders.filter(
+    (folder) => path.resolve(folder).toLowerCase() !== path.resolve(dir).toLowerCase()
+  );
+  lastRoots = lastRoots.filter(
+    (root) => path.resolve(root).toLowerCase() !== path.resolve(dir).toLowerCase()
+  );
   saveState(state);
   return true;
 });
@@ -479,7 +510,13 @@ function recentsFromManifests(state) {
 
 ipcMain.handle('recents', () => {
   const state = loadState();
-  const saved = (state.recents || []).filter((r) => fs.existsSync(r.dir));
+  const excluded = state.excludedRoots || [];
+  const manual = new Set((state.manual || []).map((dir) => path.resolve(dir).toLowerCase()));
+  const saved = (state.recents || []).filter((r) =>
+    fs.existsSync(r.dir) && (
+      manual.has(path.resolve(r.dir).toLowerCase()) || !excluded.some((root) => isInside(r.dir, root))
+    )
+  );
   return saved.length ? saved : recentsFromManifests(state);
 });
 
@@ -667,11 +704,18 @@ ipcMain.handle('details', async (_event, dir) => {
     exePath: scan.chosen ? scan.chosen.path : null,
     api: scan.chosen ? scan.chosen.apiLabel : null,
     apiKey: scan.chosen ? scan.chosen.api : null,
+    bitness: scan.chosen ? scan.chosen.bitness : null,
     via: scan.chosen ? scan.chosen.via : null,
     exes: scan.exeCandidates.map((e) => ({
-      rel: e.rel, path: e.path, apiLabel: e.apiLabel, api: e.api, size: e.size, via: e.via
+      rel: e.rel, path: e.path, apiLabel: e.apiLabel, api: e.api,
+      bitness: e.bitness, size: e.size, via: e.via
     })),
     files,
+    currentDlss: scan.primaryDlss ? {
+      rel: scan.primaryDlss.rel,
+      version: scan.primaryDlss.version,
+      bitness: scan.primaryDlss.bitness
+    } : null,
     addon: scan.addonPresent,
     reshade: scan.reshade,
     hasBackup: scan.hasBackup,
@@ -696,7 +740,10 @@ ipcMain.handle('install', async (event, dir, exePath) => {
   // second one would sit beside the first and ReShade would load the same
   // add-on twice. Park the old one instead of deleting it: .disabled is the
   // convention already used for parked builds here, and it is reversible.
-  const companions = companionAddons();
+  // 32-bit games use the fixed v4.55 add-on inside the 64-bit helper. A loose
+  // 64-bit companion beside the 32-bit game cannot load and newer builds may
+  // conflict with the feeder contract.
+  const companions = target.bitness === 32 ? [] : companionAddons();
   const exeDir = path.dirname(target.path);
   const keep = new Set([path.basename(p.source.addon).toLowerCase()]);
   for (const c of companions) keep.add(path.basename(c).toLowerCase());
@@ -715,6 +762,7 @@ ipcMain.handle('install', async (event, dir, exePath) => {
       gameDir: dir,
       exePath: target.path,
       api: target.api,
+      bitness: target.bitness,
       source: p.source,
       reshadeSetup: p.reshadeSetup,
       installReShade: true,

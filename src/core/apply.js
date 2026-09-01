@@ -5,16 +5,77 @@
 // Nothing here writes user-facing prose. Every step reports a code plus its
 // values, and the renderer turns that into whichever language is selected.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const pe = require('./pe');
 const { scanGame } = require('./scan');
+const feederConfig = require('./feeder-config');
 
 const BACKUP_DIR = '_DLSS5_Backup';
 const MANIFEST = 'manifest.json';
 
 function backupRoot(gameDir) {
   return path.join(gameDir, BACKUP_DIR);
+}
+
+const relKey = (rel) => path.normalize(String(rel)).toLowerCase();
+
+// An active manifest describes the machine state from before the first swap,
+// not merely the most recent click on Install. Reusing it is what makes a
+// second install (or an upgrade to a newer payload) still restore the genuine
+// originals instead of forgetting files that were already up to date.
+function beginManifest(gameDir, exePath, api) {
+  const manifestPath = path.join(backupRoot(gameDir), MANIFEST);
+  let previous = null;
+  if (fs.existsSync(manifestPath)) {
+    try {
+      previous = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    } catch {
+      throw fail('errBackupInvalid');
+    }
+    if (!previous || previous.version !== 1) throw fail('errBackupInvalid');
+  }
+
+  return {
+    ...(previous || {}),
+    version: 1,
+    date: new Date().toISOString(),
+    game: { dir: gameDir, exe: path.relative(gameDir, exePath), api },
+    replaced: Array.isArray(previous && previous.replaced) ? [...previous.replaced] : [],
+    added: Array.isArray(previous && previous.added) ? [...previous.added] : [],
+    addedDirs: Array.isArray(previous && previous.addedDirs) ? [...previous.addedDirs] : [],
+    reshade: {
+      installedByUs: false,
+      file: null,
+      filesAdded: [],
+      ...((previous && previous.reshade) || {})
+    }
+  };
+}
+
+function wasAdded(manifest, rel) {
+  const key = relKey(rel);
+  return manifest.added.some((item) => relKey(item) === key);
+}
+
+function rememberAdded(manifest, rel) {
+  if (!wasAdded(manifest, rel)) manifest.added.push(rel);
+}
+
+// Keep the first oldVersion forever: it is the version in the backup. Later
+// installs may update newVersion, but must never turn an app-added file into a
+// replacement or replace the identity of the user's original file.
+function rememberReplacement(manifest, item) {
+  if (wasAdded(manifest, item.rel)) return;
+  const key = relKey(item.rel);
+  const previous = manifest.replaced.find((row) => relKey(row.rel) === key);
+  if (previous) {
+    previous.newVersion = item.newVersion;
+    if (item.kind && !previous.kind) previous.kind = item.kind;
+    return;
+  }
+  manifest.replaced.push(item);
 }
 
 function fail(code, params) {
@@ -100,10 +161,290 @@ async function backupReShadeConfig(gameDir, exeDir, manifest) {
     if (rel.startsWith('..')) continue;
     const backupPath = path.join(backupRoot(gameDir), rel);
     if (!fs.existsSync(backupPath)) await copyOver(target, backupPath);
-    if (!manifest.replaced.some((r) => r.rel === rel)) {
-      manifest.replaced.push({ rel, kind: 'config' });
+    rememberReplacement(manifest, { rel, kind: 'config' });
+  }
+}
+
+function rememberAddedDir(manifest, rel) {
+  const key = relKey(rel);
+  if (!manifest.addedDirs.some((item) => relKey(item) === key)) manifest.addedDirs.push(rel);
+}
+
+// Record every parent folder that this install creates. Restore removes these
+// only when empty, so a user's files can never be swept up with our payload.
+function rememberMissingParents(manifest, gameDir, target) {
+  const missing = [];
+  let current = path.dirname(target);
+  const root = path.resolve(gameDir);
+  while (path.resolve(current).toLowerCase() !== root.toLowerCase()) {
+    const rel = path.relative(root, current);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) break;
+    if (!fs.existsSync(current)) missing.push(rel);
+    current = path.dirname(current);
+  }
+  for (const rel of missing.reverse()) rememberAddedDir(manifest, rel);
+}
+
+async function trackBeforeWrite(manifest, gameDir, target, meta = {}) {
+  const rel = path.relative(gameDir, target);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) throw fail('errUnsafeTarget', { rel });
+  rememberMissingParents(manifest, gameDir, target);
+  if (fs.existsSync(target)) {
+    if (!wasAdded(manifest, rel)) {
+      const backupPath = path.join(backupRoot(gameDir), rel);
+      if (!fs.existsSync(backupPath)) await copyOver(target, backupPath);
+      rememberReplacement(manifest, {
+        rel,
+        oldVersion: meta.oldVersion === undefined ? pe.getFileVersion(target) : meta.oldVersion,
+        newVersion: meta.newVersion,
+        kind: meta.kind
+      });
+    }
+  } else {
+    rememberAdded(manifest, rel);
+  }
+  return rel;
+}
+
+async function copyTracked(manifest, gameDir, src, dest, meta = {}) {
+  const rel = await trackBeforeWrite(manifest, gameDir, dest, meta);
+  await copyOver(src, dest);
+  return rel;
+}
+
+async function writeTracked(manifest, gameDir, dest, text, meta = {}) {
+  const rel = await trackBeforeWrite(manifest, gameDir, dest, meta);
+  await fs.promises.mkdir(path.dirname(dest), { recursive: true });
+  await fs.promises.writeFile(dest, text, 'utf8');
+  return rel;
+}
+
+async function copyTreeTracked(manifest, gameDir, srcRoot, destRoot, log) {
+  const queue = [''];
+  while (queue.length) {
+    const relDir = queue.shift();
+    const srcDir = path.join(srcRoot, relDir);
+    for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+      const rel = path.join(relDir, entry.name);
+      if (entry.isDirectory()) queue.push(rel);
+      else if (entry.isFile()) {
+        const dest = path.join(destRoot, rel);
+        const installedRel = await copyTracked(manifest, gameDir, path.join(srcRoot, rel), dest, { kind: 'shader' });
+        log('added', { rel: installedRel, version: null });
+      }
     }
   }
+}
+
+function isAddonReShade(file) {
+  try {
+    const binary = fs.readFileSync(file);
+    const identifiesAsReShade = pe.versionMentions(file, 'ReShade') || binary.includes(Buffer.from('ReShade'));
+    return identifiesAsReShade && binary.includes(Buffer.from('Searching for add-ons'));
+  } catch {
+    return false;
+  }
+}
+
+function hookForApi(api) {
+  if (api === 'opengl') return 'opengl32.dll';
+  if (api === 'd3d9') return 'd3d9.dll';
+  return 'dxgi.dll';
+}
+
+// Microsoft Store/GDK executables may remain encrypted even in an otherwise
+// writable XboxGames flat-file install. ReShade Setup cannot inspect those
+// executables, so ask it to extract the correct 64-bit add-on build beside our
+// own readable helper executable, then copy only the resulting proxy to the
+// selected game. This does not bypass WindowsApps permissions or encryption.
+async function installReShadeFromHelper(options) {
+  const {
+    gameDir, exeDir, api, bitness, source, reshadeSetup,
+    setupRunner, manifest, log
+  } = options;
+  const helper = source && source.feeder && source.feeder.host64;
+  if (bitness !== 64 || !helper || !fs.existsSync(helper)) return null;
+
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'dlss5-reshade-'));
+  try {
+    const probeExe = path.join(tempDir, 'dlss5-reshade-host64.exe');
+    await copyOver(helper, probeExe);
+    const runner = setupRunner || runSetup;
+    const result = await runner(reshadeSetup, [probeExe, '--api', api, '--headless'], log);
+    const hook = hookForApi(api);
+    const extracted = path.join(tempDir, hook);
+    if (!fs.existsSync(extracted) || !isAddonReShade(extracted)) {
+      return { ok: false, result };
+    }
+
+    const destination = path.join(exeDir, hook);
+    await trackBeforeWrite(manifest, gameDir, destination, { kind: 'reshade' });
+    await copyOver(extracted, destination);
+    log('reshadeXboxFallback', { file: hook });
+    return {
+      ok: true,
+      reshade: {
+        installed: true,
+        file: hook,
+        kind: 'proxy',
+        version: pe.getFileVersion(extracted),
+        addonSupport: true
+      }
+    };
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function installReShadeAt(options) {
+  const {
+    gameDir, exePath, api, manifest, reshadeSetup, setupRunner,
+    log, gameInstance
+  } = options;
+  const exeDir = path.dirname(exePath);
+  const hook = hookForApi(api);
+  const hookPath = path.join(exeDir, hook);
+
+  if (isAddonReShade(hookPath)) {
+    log('reshadeAlreadyThere', {
+      version: pe.getFileVersion(hookPath), file: hook, kind: 'proxy', addonSupport: true
+    });
+    return hookPath;
+  }
+  if (!reshadeSetup || !fs.existsSync(reshadeSetup)) throw fail('errReShadeSetupMissing');
+
+  const hookExisted = fs.existsSync(hookPath);
+  await backupReShadeConfig(gameDir, exeDir, manifest);
+  await trackBeforeWrite(manifest, gameDir, hookPath, { kind: 'reshade' });
+  const ini = path.join(exeDir, 'ReShade.ini');
+  if (!fs.existsSync(ini)) await trackBeforeWrite(manifest, gameDir, ini, { kind: 'config' });
+  const defaultPreset = path.join(exeDir, 'ReShadePreset.ini');
+  if (!fs.existsSync(defaultPreset)) await trackBeforeWrite(manifest, gameDir, defaultPreset, { kind: 'config' });
+
+  const runner = setupRunner || runSetup;
+  const result = await runner(reshadeSetup, [exePath, '--api', api, '--headless'], log);
+  if (!fs.existsSync(hookPath) || !isAddonReShade(hookPath)) {
+    throw fail('errReShadeInstall', { exit: result && result.code, output: result && result.output });
+  }
+  if (gameInstance) {
+    manifest.reshade.installedByUs = !hookExisted;
+    manifest.reshade.file = hook;
+  }
+  log('reshadeInstalled', { version: pe.getFileVersion(hookPath), file: hook });
+  return hookPath;
+}
+
+async function apply32Bit(config, log) {
+  const {
+    gameDir, exePath, api, source, reshadeSetup, setupRunner
+  } = config;
+  const exeDir = path.dirname(exePath);
+  if (!canWrite(exeDir)) throw fail('errNoWriteAccess');
+  if (!source.hasNeuralRendering) throw fail('errNoNeuralRuntime');
+  if (!source.feeder || !source.feeder.ok) throw fail('err32BitSupportMissing');
+  if (!['dxgi', 'd3d9', 'opengl'].includes(api)) throw fail('err32BitApiUnsupported', { api });
+
+  const manifest = beginManifest(gameDir, exePath, api);
+  manifest.game.bitness = 32;
+  const payloadByName = new Map(source.payload.map((file) => [file.name.toLowerCase(), file]));
+  const neural = payloadByName.get('nvngx_dlssnr.dll');
+  const dlss = payloadByName.get('nvngx_dlss.dll');
+  if (!neural || !dlss) throw fail('errNoNeuralRuntime');
+
+  // D3D9 is translated to D3D11 first. ReShade must then hook DXGI; d3d9.dll
+  // belongs to dgVoodoo and using ReShade under that same name would bypass it.
+  let reshadeApi = api;
+  if (api === 'd3d9') {
+    const dg = source.feeder.dgVoodooDir;
+    const dgDll = path.join(dg, 'D3D9.dll');
+    const dgConf = path.join(dg, 'dgVoodoo.conf');
+    const dgCpl = path.join(dg, 'dgVoodooCpl.exe');
+    if (![dgDll, dgConf, dgCpl].every((file) => fs.existsSync(file))) throw fail('errDgVoodooMissing');
+    for (const src of [dgDll, dgCpl]) {
+      const rel = await copyTracked(manifest, gameDir, src, path.join(exeDir, path.basename(src)), { kind: 'dgvoodoo' });
+      log('added', { rel, version: pe.getFileVersion(src) });
+    }
+    const confPath = path.join(exeDir, 'dgVoodoo.conf');
+    const baseConf = fs.existsSync(confPath)
+      ? feederConfig.readText(confPath)
+      : feederConfig.readText(dgConf);
+    await writeTracked(manifest, gameDir, confPath, feederConfig.configureDgVoodoo(baseConf), { kind: 'config' });
+    reshadeApi = 'dxgi';
+  }
+
+  await installReShadeAt({
+    gameDir, exePath, api: reshadeApi, manifest, reshadeSetup, setupRunner, log, gameInstance: true
+  });
+
+  const addonRel = await copyTracked(
+    manifest, gameDir, source.feeder.addon32,
+    path.join(exeDir, 'dlss5-feed.addon32'), { kind: 'feeder' }
+  );
+  log('addonInstalled', { name: path.basename(addonRel) });
+  await copyTreeTracked(
+    manifest, gameDir, source.feeder.shaderRoot,
+    path.join(exeDir, 'reshade-shaders'), log
+  );
+  const installedShaders = [
+    path.join(exeDir, 'reshade-shaders', 'Shaders', 'DLSS5_Feed.fx'),
+    path.join(exeDir, 'reshade-shaders', 'Shaders', 'vort_Motion.fx'),
+    path.join(exeDir, 'reshade-shaders', 'Shaders', 'ReShade.fxh'),
+    path.join(exeDir, 'reshade-shaders', 'Shaders', 'ReShadeUI.fxh'),
+    path.join(exeDir, 'reshade-shaders', 'Shaders', 'Includes', 'vort_Defs.fxh'),
+    path.join(exeDir, 'reshade-shaders', 'Textures', 'vort_BlueNoise.png')
+  ];
+  if (!installedShaders.every((file) => fs.existsSync(file))) throw fail('errShaderInstall');
+
+  const gameIniPath = path.join(exeDir, 'ReShade.ini');
+  let gameIni = feederConfig.configureGameReShade(feederConfig.readText(gameIniPath));
+  let preset = feederConfig.presetPath(exeDir, gameIni);
+  const presetRel = path.relative(gameDir, preset);
+  if (presetRel.startsWith('..') || path.isAbsolute(presetRel)) {
+    // Do not modify a shared/global preset outside the selected game. Use a
+    // local install preset for this session; restore puts the original INI back.
+    gameIni = feederConfig.setIni(gameIni, 'GENERAL', 'PresetPath', '.\\ReShadePreset.ini');
+    preset = path.join(exeDir, 'ReShadePreset.ini');
+  }
+  await writeTracked(manifest, gameDir, gameIniPath, gameIni, { kind: 'config' });
+  await writeTracked(
+    manifest, gameDir, preset,
+    feederConfig.configurePreset(feederConfig.readText(preset)), { kind: 'config' }
+  );
+  const cfgPath = path.join(exeDir, 'dlss5-feed.cfg');
+  await writeTracked(
+    manifest, gameDir, cfgPath,
+    feederConfig.configureFeed(feederConfig.readText(cfgPath)), { kind: 'config' }
+  );
+
+  const hostDir = path.join(exeDir, 'host64');
+  const hostExe = path.join(hostDir, 'dlss5-feed-host64.exe');
+  const hostFiles = [
+    [source.feeder.host64, hostExe, 'feeder'],
+    [source.feeder.hostAddon, path.join(hostDir, 'renodx-dlss5.addon64'), 'addon'],
+    [neural.path, path.join(hostDir, neural.name), 'runtime'],
+    [dlss.path, path.join(hostDir, dlss.name), 'runtime']
+  ];
+  for (const [src, dest, kind] of hostFiles) {
+    const rel = await copyTracked(manifest, gameDir, src, dest, { kind, newVersion: pe.getFileVersion(src) });
+    log(kind === 'addon' ? 'addonInstalled' : 'added', { rel, name: path.basename(dest), version: pe.getFileVersion(src) });
+  }
+  await installReShadeAt({
+    gameDir, exePath: hostExe, api: 'dxgi', manifest, reshadeSetup, setupRunner, log, gameInstance: false
+  });
+  const hostIniPath = path.join(hostDir, 'ReShade.ini');
+  await writeTracked(
+    manifest, gameDir, hostIniPath,
+    feederConfig.configureHostReShade(feederConfig.readText(hostIniPath)), { kind: 'config' }
+  );
+
+  enableAddonInIni(exeDir, 'dlss5-feed.addon32', log);
+  enableAddonInIni(hostDir, 'renodx-dlss5.addon64', log);
+  await fs.promises.mkdir(backupRoot(gameDir), { recursive: true });
+  await fs.promises.writeFile(
+    path.join(backupRoot(gameDir), MANIFEST), JSON.stringify(manifest, null, 2), 'utf8'
+  );
+  log('applyDone');
+  return manifest;
 }
 
 // Keeps ReShade from starting with our add-on switched off.
@@ -111,7 +452,7 @@ function enableAddonInIni(exeDir, addonName, log) {
   const ini = path.join(exeDir, 'ReShade.ini');
   if (!fs.existsSync(ini)) return;
   let text = fs.readFileSync(ini, 'utf8');
-  const stem = addonName.replace(/\.addon(64)?$/i, '');
+  const stem = addonName.replace(/\.addon(?:32|64)?$/i, '');
   const match = text.match(/^DisabledAddons=(.*)$/m);
   if (match && match[1].toLowerCase().includes(stem.toLowerCase())) {
     text = text.replace(/^DisabledAddons=.*$/m, 'DisabledAddons=');
@@ -122,8 +463,10 @@ function enableAddonInIni(exeDir, addonName, log) {
 
 async function applySwap(config, onLog) {
   const log = (code, params) => onLog && onLog({ code, params: params || {} });
+  const bitness = config.bitness || pe.getBitness(config.exePath);
+  if (bitness === 32) return apply32Bit(config, log);
   const {
-    gameDir, exePath, api, source, reshadeSetup,
+    gameDir, exePath, api, source, reshadeSetup, setupRunner,
     installReShade, addMissingDlss, addStreamline, upgradeReShade
   } = config;
   const exeDir = path.dirname(exePath);
@@ -132,14 +475,8 @@ async function applySwap(config, onLog) {
   if (!source.hasNeuralRendering) throw fail('errNoNeuralRuntime');
 
   const scan = await scanGame(gameDir);
-  const manifest = {
-    version: 1,
-    date: new Date().toISOString(),
-    game: { dir: gameDir, exe: path.relative(gameDir, exePath), api },
-    replaced: [],
-    added: [],
-    reshade: { installedByUs: false, file: null, filesAdded: [] }
-  };
+  const manifest = beginManifest(gameDir, exePath, api);
+  const setup = setupRunner || runSetup;
 
   const payloadByName = new Map(source.payload.map((f) => [f.name.toLowerCase(), f]));
   const existing = [...scan.dlssFiles, ...scan.streamlineFiles];
@@ -154,9 +491,9 @@ async function applySwap(config, onLog) {
       continue;
     }
     const backupPath = path.join(backupRoot(gameDir), file.rel);
-    if (!fs.existsSync(backupPath)) await copyOver(file.path, backupPath);
+    if (!wasAdded(manifest, file.rel) && !fs.existsSync(backupPath)) await copyOver(file.path, backupPath);
     await copyOver(replacement.path, file.path);
-    manifest.replaced.push({ rel: file.rel, oldVersion: file.version, newVersion: replacement.version });
+    rememberReplacement(manifest, { rel: file.rel, oldVersion: file.version, newVersion: replacement.version });
     log('replaced', { rel: file.rel, from: file.version, to: replacement.version });
   }
 
@@ -181,11 +518,11 @@ async function applySwap(config, onLog) {
         continue;
       }
       const backupPath = path.join(backupRoot(gameDir), rel);
-      if (!fs.existsSync(backupPath)) await copyOver(dest, backupPath);
-      manifest.replaced.push({ rel, oldVersion: current, newVersion: item.version });
+      if (!wasAdded(manifest, rel) && !fs.existsSync(backupPath)) await copyOver(dest, backupPath);
+      rememberReplacement(manifest, { rel, oldVersion: current, newVersion: item.version });
       log('replaced', { rel, from: current, to: item.version });
     } else {
-      manifest.added.push(rel);
+      rememberAdded(manifest, rel);
       log('added', { rel, version: item.version });
     }
     await copyOver(item.path, dest);
@@ -198,14 +535,14 @@ async function applySwap(config, onLog) {
     const rel = path.relative(gameDir, dest);
     if (fs.existsSync(dest)) {
       const backupPath = path.join(backupRoot(gameDir), rel);
-      if (!fs.existsSync(backupPath)) await copyOver(dest, backupPath);
-      manifest.replaced.push({
+      if (!wasAdded(manifest, rel) && !fs.existsSync(backupPath)) await copyOver(dest, backupPath);
+      rememberReplacement(manifest, {
         rel,
         oldVersion: pe.getFileVersion(dest),
         newVersion: pe.getFileVersion(source.addon)
       });
     } else {
-      manifest.added.push(rel);
+      rememberAdded(manifest, rel);
     }
     await copyOver(source.addon, dest);
     log('addonInstalled', { name: addonName });
@@ -236,14 +573,14 @@ async function applySwap(config, onLog) {
     const known = listDir(exeDir);
     const proxyPath = path.join(exeDir, 'dxgi.dll');
     const proxyExisted = fs.existsSync(proxyPath);
-    const result = await runSetup(reshadeSetup, [exePath, '--api', api, '--headless'], log);
+    const result = await setup(reshadeSetup, [exePath, '--api', api, '--headless'], log);
     manifest.reshade.filesAdded = newReShadeFiles(exeDir, known);
     if (!fs.existsSync(proxyPath)) {
       throw fail('errReShadeExtract', { exit: result.code, output: result.output });
     }
     await copyOver(proxyPath, path.join(exeDir, before.file));
     if (!proxyExisted) await fs.promises.unlink(proxyPath);
-    manifest.replaced.push({ rel: asiRel, oldVersion: before.version, newVersion: setupVersion });
+    rememberReplacement(manifest, { rel: asiRel, oldVersion: before.version, newVersion: setupVersion });
     log('asiUpgraded', { file: before.file, from: before.version, to: setupVersion });
   } else if (upgradingProxy) {
     const rel = path.relative(gameDir, path.join(exeDir, before.file));
@@ -251,17 +588,30 @@ async function applySwap(config, onLog) {
     if (!fs.existsSync(backupPath)) await copyOver(path.join(exeDir, before.file), backupPath);
     await backupReShadeConfig(gameDir, exeDir, manifest);
     const known = listDir(exeDir);
-    const result = await runSetup(reshadeSetup, [exePath, '--api', api, '--headless'], log);
+    const result = await setup(reshadeSetup, [exePath, '--api', api, '--headless'], log);
     manifest.reshade.filesAdded = newReShadeFiles(exeDir, known);
     const after = (await scanGame(gameDir)).reshade;
     if (!after.installed) throw fail('errReShadeUpgrade', { exit: result.code, output: result.output });
-    manifest.replaced.push({ rel, oldVersion: before.version, newVersion: after.version });
+    rememberReplacement(manifest, { rel, oldVersion: before.version, newVersion: after.version });
     log('proxyUpgraded', { from: before.version, to: after.version });
   } else if (installingFresh) {
     await backupReShadeConfig(gameDir, exeDir, manifest);
     const known = listDir(exeDir);
-    const result = await runSetup(reshadeSetup, [exePath, '--api', api, '--headless'], log);
-    const after = (await scanGame(gameDir)).reshade;
+    const hookPath = path.join(exeDir, hookForApi(api));
+    await trackBeforeWrite(manifest, gameDir, hookPath, { kind: 'reshade' });
+    const result = await setup(reshadeSetup, [exePath, '--api', api, '--headless'], log);
+    let after = (await scanGame(gameDir)).reshade;
+
+    // An encrypted Xbox executable is still a valid install target, but the
+    // official ReShade installer cannot identify it. Extract with our readable
+    // x64 helper and deploy the exact same proxy into the writable game folder.
+    if (!after.installed || !after.addonSupport) {
+      const fallback = await installReShadeFromHelper({
+        gameDir, exeDir, api, bitness, source, reshadeSetup,
+        setupRunner, manifest, log
+      });
+      if (fallback && fallback.ok) after = fallback.reshade;
+    }
     if (after.installed && after.addonSupport) {
       manifest.reshade.installedByUs = !before.installed;
       manifest.reshade.file = after.file;
@@ -314,6 +664,17 @@ async function restore(gameDir, onLog) {
     if (fs.existsSync(target)) {
       await fs.promises.unlink(target);
       log('deleted', { rel });
+    }
+  }
+
+  for (const rel of [...(manifest.addedDirs || [])].sort((a, b) => b.length - a.length)) {
+    const target = path.join(gameDir, rel);
+    if (!fs.existsSync(target)) continue;
+    try {
+      await fs.promises.rmdir(target);
+      log('deleted', { rel });
+    } catch {
+      // Only remove empty folders. Anything the user or game added survives.
     }
   }
 

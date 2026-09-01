@@ -221,12 +221,29 @@ function dedupe(games) {
   return [...seen.values()];
 }
 
-function discover(extraFolders = [], scanDrives = true) {
-  const found = [...steam(), ...epic(), ...gog()];
-  const roots = scanDrives ? autoRoots() : [];
-  for (const dir of roots) found.push(...folder(dir, 'My folders', true));
-  for (const dir of extraFolders) found.push(...folder(dir));
-  return { games: dedupe(found), roots };
+function normalized(file) {
+  return path.resolve(file).replace(/[\\/]+$/, '').toLowerCase();
 }
 
-module.exports = { discover, folder, dedupe, autoRoots, drives };
+function isInside(file, root) {
+  const candidate = normalized(file);
+  const parent = normalized(root);
+  return candidate === parent || candidate.startsWith(parent + path.sep.toLowerCase());
+}
+
+function filterExcluded(games, excludedRoots = []) {
+  const excluded = excludedRoots.filter(Boolean);
+  if (!excluded.length) return games;
+  return games.filter((game) => !excluded.some((root) => isInside(game.dir, root)));
+}
+
+function discover(extraFolders = [], scanDrives = true, excludedRoots = []) {
+  const found = [...steam(), ...epic(), ...gog()];
+  const roots = (scanDrives ? autoRoots() : [])
+    .filter((root) => !excludedRoots.some((excluded) => isInside(root, excluded)));
+  for (const dir of roots) found.push(...folder(dir, 'My folders', true));
+  for (const dir of extraFolders) found.push(...folder(dir));
+  return { games: dedupe(filterExcluded(found, excludedRoots)), roots };
+}
+
+module.exports = { discover, folder, dedupe, autoRoots, drives, isInside, filterExcluded };

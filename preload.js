@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('lab', {
   settings: () => ipcRenderer.invoke('settings'),
   addFolder: () => ipcRenderer.invoke('add-folder'),
   removeFolder: (dir) => ipcRenderer.invoke('remove-folder', dir),
+  excludeRoot: (dir) => ipcRenderer.invoke('exclude-root', dir),
   addGame: () => ipcRenderer.invoke('add-game'),
   addGameByPath: (dir) => ipcRenderer.invoke('add-game-path', dir),
   setPoster: (dir) => ipcRenderer.invoke('set-poster', dir),

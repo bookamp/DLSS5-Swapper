@@ -99,6 +99,21 @@ function getImports(file) {
   }
 }
 
+// Returns the executable architecture without loading or executing it. The
+// optional-header magic is authoritative: PE32 is 32-bit and PE32+ is 64-bit.
+function getBitness(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const h = readHeaders(fd);
+    return h ? (h.is64 ? 64 : 32) : null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch {}
+  }
+}
+
 // Which of the given ASCII markers appear anywhere in the file. A game that
 // loads Direct3D with LoadLibrary has no import entry for it, but the DLL name
 // and the entry point it asks for are still sitting there as plain strings.
@@ -185,10 +200,29 @@ function getFileVersion(file) {
   const blob = getVersionBlob(file);
   if (!blob) return null;
   const sig = blob.indexOf(Buffer.from([0xbd, 0x04, 0xef, 0xfe]));
-  if (sig === -1 || sig + 24 > blob.length) return null;
-  const ms = blob.readUInt32LE(sig + 8);
-  const ls = blob.readUInt32LE(sig + 12);
-  return [ms >>> 16, ms & 0xffff, ls >>> 16, ls & 0xffff].join('.');
+  if (sig !== -1 && sig + 24 <= blob.length) {
+    const ms = blob.readUInt32LE(sig + 8);
+    const ls = blob.readUInt32LE(sig + 12);
+    const fixed = [ms >>> 16, ms & 0xffff, ls >>> 16, ls & 0xffff].join('.');
+    if (fixed !== '0.0.0.0') return fixed;
+  }
+
+  // A few vendor DLLs leave VS_FIXEDFILEINFO blank but still publish
+  // FileVersion/ProductVersion in the resource string table. Read that value
+  // instead of reporting that DLSS has no version at all.
+  for (const key of ['FileVersion', 'ProductVersion']) {
+    const needle = Buffer.from(key + '\0', 'utf16le');
+    const keyAt = blob.indexOf(needle);
+    if (keyAt === -1) continue;
+    let valueAt = keyAt + needle.length;
+    valueAt = (valueAt + 3) & ~3;
+    let end = valueAt;
+    while (end + 1 < blob.length && blob.readUInt16LE(end) !== 0) end += 2;
+    const raw = blob.subarray(valueAt, end).toString('utf16le').trim();
+    const match = raw.match(/\d+(?:\s*[.,]\s*\d+){1,3}/);
+    if (match) return match[0].replace(/\s*[.,]\s*/g, '.');
+  }
+  return null;
 }
 
 // True when the version resource mentions the given text (UTF-16 strings).
@@ -198,4 +232,4 @@ function versionMentions(file, text) {
   return blob.includes(Buffer.from(text, 'utf16le'));
 }
 
-module.exports = { getImports, getFileVersion, versionMentions, findMarkers };
+module.exports = { getImports, getBitness, getFileVersion, versionMentions, findMarkers };
