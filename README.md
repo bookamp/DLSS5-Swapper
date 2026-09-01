@@ -78,6 +78,30 @@ its author marks it as possibly buggy.
 
 ---
 
+## 🚀 Try DLSS 5 in Games Without Native DLSS Support
+
+You can now try **DLSS 5 on games that don't natively support DLSS**.
+
+### How to enable it
+
+**1.** Open **Add-ons** in DLSS 5 Swapper.
+
+**2.** Enable **DX12 / DX11 / DX9 Support**.
+
+**3.** Go to your **Game Library** and select the game you want.
+
+**4.** Install **DLSS 5** on the game.
+
+**5.** Launch the game and test it!
+
+The add-on handles the integration automatically, allowing compatible games without native DLSS support to use **DLSS 5**.
+
+> ⚠️ **Experimental:** Compatibility may vary between games. Some titles may not work correctly yet.
+
+Try it with your games and let us know which ones work! 🎮🔥
+
+---
+
 ## Your library
 
 <p align="center">
