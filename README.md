@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/01-home.png" alt="Home" width="100%">
+  <img src="https://raw.githubusercontent.com/rakanki911/DLSS5-Swapper/7415065e5c5437441d0e0b0a0362d0ada6d86e15/docs/screenshots/01-home.png" alt="Home" width="100%">
 </p>
 
 ---
@@ -432,7 +432,7 @@ Try it with your games and let us know which ones work! 🎮🔥
 ## Your library
 
 <p align="center">
-  <img src="docs/screenshots/02-games.png" alt="Games" width="100%">
+  <img src="https://raw.githubusercontent.com/rakanki911/DLSS5-Swapper/7415065e5c5437441d0e0b0a0362d0ada6d86e15/docs/screenshots/02-games.png" alt="Games" width="100%">
 </p>
 
 Launcher libraries are found automatically. The optional full-drive scan can
@@ -459,7 +459,7 @@ reinstall those games to an `XboxGames` folder through the Xbox app instead of
 changing WindowsApps ownership or permissions.
 
 <p align="center">
-  <img src="docs/screenshots/03-library.png" alt="Library" width="100%">
+  <img src="https://raw.githubusercontent.com/rakanki911/DLSS5-Swapper/7415065e5c5437441d0e0b0a0362d0ada6d86e15/docs/screenshots/03-library.png" alt="Library" width="100%">
 </p>
 
 ---
@@ -467,7 +467,7 @@ changing WindowsApps ownership or permissions.
 ## Installing
 
 <p align="center">
-  <img src="docs/screenshots/04-game.png" alt="Game details" width="100%">
+  <img src="https://raw.githubusercontent.com/rakanki911/DLSS5-Swapper/7415065e5c5437441d0e0b0a0362d0ada6d86e15/docs/screenshots/04-game.png" alt="Game details" width="100%">
 </p>
 
 Open a game and the app shows exactly what it found and what it will change:
