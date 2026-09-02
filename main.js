@@ -9,7 +9,8 @@ const { pathToFileURL } = require('url');
 const crypto = require('crypto');
 
 const { scanGame } = require('./src/core/scan.js');
-const { discover, folder, dedupe, isInside } = require('./src/library');
+const { discover, folder, dedupe, isInside, steam } = require('./src/library');
+const { contextForSteamGame, createSetupRunner } = require('./src/core/proton');
 const art = require('./src/steamart');
 const { backupRoot } = require('./src/core/apply.js');
 const { scanSource } = require('./src/core/scan.js');
@@ -792,6 +793,20 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
   const route = availableRoutes.includes(requestedRoute) ? requestedRoute
     : (availableRoutes.includes(recommendedRoute) ? recommendedRoute : availableRoutes[0]);
 
+  // ReShade Setup is a Windows executable. On Linux, support Windows games
+  // launched with Steam Play by using their existing Proton prefix; native
+  // Linux games do not load the Windows DLSS/ReShade payload.
+  const protonGame = process.platform === 'linux'
+    ? steam().find((game) => path.resolve(game.dir) === path.resolve(dir))
+    : null;
+  const proton = contextForSteamGame(protonGame);
+  if (process.platform === 'linux' && !proton) {
+    return { ok: false, code: 'errProtonRequired', message: 'This installer supports Windows games launched through Steam Proton. Launch the game once with Proton, then try again.' };
+  }
+  if (process.platform === 'linux' && api === 'vulkan') {
+    return { ok: false, code: 'errLinuxVulkanUnsupported', message: 'The Vulkan Feeder route needs a host Vulkan layer and is not supported on Linux yet. Select a DirectX renderer in the game.' };
+  }
+
   const send = (e) => event.sender.send('job', e);
   await guards.assertGameClosed(dir, target.path);
   if (fs.existsSync(journal.pendingPath(dir))) return { ok: false, code: 'errBackendRecovery' };
@@ -891,6 +906,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
       optiRoot,
       companions,
       reshadeSetup: p.reshadeSetup,
+      setupRunner: proton ? createSetupRunner(proton) : undefined,
       vulkanLayerTarget: path.join(app.getPath('userData'), 'reshade-vulkan'),
       installReShade: true,
       addMissingDlss: true,

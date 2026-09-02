@@ -5,13 +5,13 @@
 <h1 align="center">DLSS 5 Swapper</h1>
 
 <p align="center">
-  Finds your games and installs DLSS 5 Neural Rendering in one click.
+  Manage DLSS 5 Neural Rendering for compatible games and emulators — now with optional OptiScaler DLSS-NR.
 </p>
 
 <p align="center">
   <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/rakanki911/DLSS5-Swapper?style=flat-square&color=8fd400&label=release&cacheSeconds=300" alt="Release"></a>
   <a href="../../releases"><img src="https://img.shields.io/github/downloads/rakanki911/DLSS5-Swapper/total?style=flat-square&color=8fd400&label=downloads&cacheSeconds=300" alt="Downloads"></a>
-  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-8fd400?style=flat-square" alt="Windows">
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20%7C%20Linux%20(Proton)-8fd400?style=flat-square" alt="Windows and Linux Proton">
   <img src="https://img.shields.io/badge/languages-38-8fd400?style=flat-square" alt="38 languages">
   <img src="https://img.shields.io/badge/licence-MIT-8fd400?style=flat-square" alt="MIT">
 </p>
@@ -24,22 +24,85 @@
 
 ## Download
 
-| File | Size | |
-| --- | --- | --- |
-| **DLSS5-Swapper-Setup-2.1.1.exe** | 231 MB | Installer — shortcuts, clean uninstall |
-| **DLSS5-Swapper-2.1.1-portable.exe** | 231 MB | Single file, no installation |
+| File | Description |
+| --- | --- |
+| [**DLSS5-Swapper-Setup-2.2.0.exe**](../../releases/download/v2.2.0/DLSS5-Swapper-Setup-2.2.0.exe) | Windows installer with shortcuts |
+| [**DLSS5-Swapper-2.2.0-portable.exe**](../../releases/download/v2.2.0/DLSS5-Swapper-2.2.0-portable.exe) | Windows portable — no installation needed |
+| [**SHA256SUMS.txt**](../../releases/download/v2.2.0/SHA256SUMS.txt) | Checksums for the release downloads |
 
 Get either from the [**Releases**](../../releases) page. Windows 10/11 64-bit
 and an NVIDIA RTX card. Feeder also requires the Microsoft Visual C++ runtime
-(x64, plus x86 for 32-bit games); the unreleased update checks for missing
+(x64, plus x86 for 32-bit games); version 2.2.0 checks for missing
 runtime DLLs. DX8/DX9 needs an internet connection for its first wrapper download.
+
+### Linux (Steam Play / Proton)
+
+The community Linux/Proton contribution from [PR #25](../../pull/25) is retained
+in source, including Steam library discovery, a Proton ReShade Setup runner,
+and AppImage/`.deb` build targets. **This 2.2.0 release ships Windows binaries
+only; no Linux download is published.** Linux installation is not validated:
+the process/runtime preflight still needs Linux-specific adaptation. Treat
+the Linux source as experimental, not a working Windows-equivalent installer.
+Native Linux games and the Linux Vulkan Feeder route are not supported.
+
+For a locally built experimental AppImage:
+
+```bash
+chmod +x DLSS5-Swapper-*-x86_64.AppImage
+./DLSS5-Swapper-*-x86_64.AppImage
+```
+
+> The Linux build needs the same bundled payload as the Windows release. A
+> preview built from this repository without `payload/` can test the interface
+> and Steam/Proton detection, but cannot install DLSS until that payload is
+> supplied.
 
 > Not code-signed, so SmartScreen shows *"Windows protected your PC"* the first
 > time. Click **More info → Run anyway**.
 
 ---
 
-## Unreleased — compatibility and recovery fixes
+## What's new in 2.2.0
+
+### Headline feature: optional OptiScaler DLSS-NR
+
+Choose **ReShade (default)** or **[OptiScaler DLSS-NR](https://github.com/Dagherbou/OptiScaler_DLSSNR/releases)**
+inside each game's details. OptiScaler is an alternative rendering backend,
+not a required replacement for ReShade. Select it, then click **Apply backend
+change / Install** with the game closed. Choose ReShade and apply again to
+return to the ReShade route; Vulkan switches require **Restore originals** first.
+
+The integrated OptiScaler release requires **RTX 50 + NVIDIA driver 616.56+**
+and a **64-bit game with native DLSS enabled**. DX11/Vulkan uses a DX12 bridge
+with FSR output by default. It is not generic DLSS injection for emulators or
+games without DLSS; those retain the ReShade/Feeder route. Compatibility and
+performance improvements depend on the game and are not guaranteed.
+
+### More new features
+
+- **Live search and combinable filters:** game title, graphics API, DLSS
+  presence/version, installed status and add-ons. Library counters are clickable.
+- **One combined library:** turn off **Group games by store** in Settings.
+- **Right-click game menus:** details, open/copy folder, rescan one game,
+  change cover, restore originals, or hide. Works in Games and Recent Games.
+- **Persistent History and copyable logs:** successful installs, reinstalls,
+  backend switches and restores are recorded independently of the backup.
+- **38-language feature coverage:** search, filters, backend/compatibility
+  warnings and native confirmation dialogs now follow the selected language.
+  Coverage tests check all 38 locales; Arabic, Persian and Urdu retain RTL.
+- **Optional anti-cheat installs:** a red warning and explicit confirmation
+  for each attempt, not a blanket ban. Risks include crashes and account bans;
+  Swapper does not disable or bypass anti-cheat.
+- **Expanded legacy routes:** 32-bit DX8 and 32/64-bit DX9 through dgVoodoo2,
+  plus coherent Feeder 0.12.0 components and runtime dependency checks.
+- **Emulators and scan controls retained:** DuckStation, PCSX2, RPCS3, Dolphin,
+  PPSSPP, Xenia, Cemu and other known profiles. Full fixed-drive scanning stays
+  **off by default**; added folders still scan, and the Settings toggle enables
+  drive-wide discovery when wanted.
+
+See the [2.2.0 release notes](docs/releases/v2.2.0.md) for fixes and limitations.
+
+### Compatibility and recovery fixes
 
 - Small executable files are no longer discarded merely for being under
   256 KB. Source/GoldSrc, Killing Floor, Far Cry 5 and Watch Dogs entry points
@@ -82,7 +145,7 @@ files if needed, then retry only on a compatible offline target. Do not disable
 anti-cheat. No claim is made that a generic access-violation stack identifies
 which graphics component failed.
 
-## Unreleased — game card context menu
+### Game card context menu
 
 - Right-click any card in **Games** or **Recent Games** to open the native
   context menu: game details, open folder, copy folder path, rescan only that
@@ -96,7 +159,7 @@ which graphics component failed.
   **Enter** to view details. New labels are available in Arabic and English;
   untranslated actions in other languages use the app's English fallback.
 
-## Unreleased — history and copyable diagnostics
+### History and copyable diagnostics
 
 - History now includes discovered games, recent targets, selected game roots,
   and timestamped restore archives. Legacy backup records are imported without
@@ -110,7 +173,7 @@ which graphics component failed.
   be selected and copied with **Ctrl+C**. Logs may contain local game paths;
   review them before sharing.
 
-## Unreleased — optional OptiScaler DLSS-NR
+### OptiScaler integration details
 
 - Each game sheet now has **Rendering backend**: **ReShade (default)** or
   **OptiScaler DLSS-NR**. Selecting an option does not modify files; click
@@ -150,7 +213,7 @@ which graphics component failed.
   game folders, including round trips, repeat installs and injected failures;
   they do **not** execute games or prove runtime/GPU compatibility.
 
-## Unreleased — compatibility repairs
+### Feeder and legacy compatibility repairs
 
 - **SWTOR / 64-bit DX9:** Feeder is now offered instead of the invalid native
   RenoDX-only route. DX9 uses the matching x86/x64 dgVoodoo2 wrapper and an
@@ -178,7 +241,7 @@ which graphics component failed.
   these repairs, then fully restart the game. Keep ReShade effects enabled;
   if the overlay says effects are disabled, press the configured effects key.
 
-## Unreleased — library navigation
+### Library navigation
 
 - Settings now includes **Group games by store**. Turn it off for one
   alphabetical grid of games and emulators without Steam/Epic/GOG sections.
@@ -255,7 +318,7 @@ available; users can select the correct depth buffer from ReShade when needed.
 | --- | --- |
 | **32-bit games** | Automatic DLSS5-Feeder route with a bundled 64-bit host |
 | **32-bit DirectX 9** | Automatic dgVoodoo2 translation, ReShade add-on and VORT motion-vector shaders |
-| **32-bit DirectX 11** | Direct ReShade add-on route; native DX10 is unsupported (corrected in the unreleased update) |
+| **32-bit DirectX 11** | Direct ReShade add-on route; native DX10 is unsupported (corrected in 2.2.0) |
 | **Xbox Game Pass** | Detects encrypted executables from `MicrosoftGame.config` in modern `XboxGames` installs |
 | **Deep game layouts** | Scans deeply nested Unreal and custom-engine binary folders without traversing large asset trees |
 | **Better executable selection** | Recognises renderer-specific, Agility SDK and single-player executables |
@@ -304,18 +367,20 @@ available; users can select the correct depth buffer from ReShade when needed.
 | **RTX 30** | Supported |
 | **RTX 20** | Supported |
 
-The bundled `nvngx_dlssnr.dll` is a patched build whose author states it adds
-RTX 20/30/40 support and runs identically on RTX 50.
+These series refer to the ReShade/Feeder route: the bundled `nvngx_dlssnr.dll`
+is a patched build whose author reports RTX 20/30/40 support. This is not an
+NVIDIA-certified compatibility claim. **The optional OptiScaler integration
+is restricted to RTX 50 and driver 616.56+.** Actual results vary by game.
 
 ### Graphics APIs
 
 | API | How |
 | --- | --- |
-| **DirectX 12** | Works out of the box for 64-bit games |
+| **DirectX 12** | Native DLSS or Feeder for compatible 64-bit games; optional OptiScaler for eligible native-DLSS titles |
 | **DirectX 11** | DLSS5-Feeder for 32/64-bit games |
 | **DirectX 10** | Not supported directly by Feeder; use the game's DX11 mode if available |
 | **DirectX 9** | DLSS5-Feeder + architecture-matched dgVoodoo2 for 32/64-bit games |
-| **DirectX 8** | 32-bit games through dgVoodoo2 → DX11 → Feeder (unreleased update) |
+| **DirectX 8** | 32-bit games through dgVoodoo2 → DX11 → Feeder |
 | **Vulkan** | DLSS5-Feeder through ReShade's per-user implicit Vulkan layer |
 | **OpenGL** | DLSS5-Feeder through the matching ReShade OpenGL proxy |
 
@@ -424,9 +489,9 @@ removes ReShade only if the app installed it.
 
 ## Add-ons
 
-The integrated RenoDX add-on is always installed and is not shown as an
-optional choice. The screen is reserved for advanced users who deliberately
-add a custom build.
+The integrated RenoDX add-on is managed by the ReShade routes and is not shown
+as a redundant optional choice. OptiScaler uses its own backend. The Add-ons
+screen remains available for advanced users who deliberately add a custom build.
 
 | | |
 | --- | --- |
@@ -459,18 +524,26 @@ Arabic, Persian and Urdu flip the whole interface right-to-left. Every step is
 recorded as an event code rather than a sentence, so switching language also
 re-translates the log already on screen.
 
+Version 2.2.0 supplies all 38 translations for search/filter controls, related
+settings, backend and compatibility warnings, and native installation
+confirmations. Product names, file paths and upstream diagnostics remain as-is.
+Some separate context-menu/copy action labels still use the English fallback.
+
 ---
 
 ## Notes
 
-- **Everything is bundled.** The DLSS 5 files, the RenoDX add-ons and the
-  ReShade installer all ship inside the app. Nothing is downloaded to install a
-  game.
+- **Core components are bundled.** DLSS files, RenoDX, ReShade and the matched
+  Feeder clients/helper/shaders ship with the Windows app. Optional OptiScaler
+  and DX8/DX9's dgVoodoo2 are downloaded from pinned official releases and
+  checksum-verified on first use. Feeder prefers downloaded LumeniteFX, with
+  bundled VORT as its offline fallback.
 - **Cover art is fetched** from Steam's public store endpoints. No account, no
-  key, no sign-in — and it is the only thing the app uses the network for.
+  key, no sign-in. Artwork and official component downloads require networking.
 - **Your ReShade preset is kept.** If `ReShade.ini` points at a preset, both are
   backed up before an upgrade.
-- **Nothing leaves your machine.** No telemetry, no accounts.
+- **No telemetry or account requirement.** Component and artwork requests go
+  to their respective hosts. Logs are shared only when you choose to copy/send them.
 
 ---
 
@@ -483,8 +556,10 @@ npm run payload     # gathers the DLSS 5 files, add-ons and ReShade Setup
 npm run build       # installer + portable, into dist/
 ```
 
-Run `npm test` for regression tests and `npm run test:ui` for the isolated,
-hidden-window search/filter UI checks (synthetic library; no real games touched).
+Run `npm test` for regression tests and `npm run test:ui` for isolated,
+hidden-window UI checks, including all 38 feature locales. `npm run test:payload`
+and `npm run test:optiscaler` verify real payload copies/restores in synthetic
+folders. These tests do not launch games or establish GPU/runtime compatibility.
 
 `npm run payload` looks for the DLSS 5 files in the parent folder and for
 `ReShade_Setup_*_Addon.exe` in `vendor/`, Downloads or Desktop. To point it
@@ -508,7 +583,9 @@ LumeniteFX; if it is unavailable, installation continues with bundled VORT.
 | `src/core/apply.js` | Backup, swap, ReShade install/upgrade, restore |
 | `src/library.js` | Steam, Epic, GOG and drive discovery |
 | `src/steamart.js` | Cover art, banners and game details |
-| `src/renderer/i18n.js` | Every user-facing string, 38 languages |
+| `src/renderer/i18n.js`, `i18n-extra.js` | Base interface translations, 38 languages |
+| `src/shared/feature-i18n.js` | Shared feature/warning translations for renderer and native dialogs |
+| `src/core/backend-manager.js`, `optiscaler.js` | Optional backend installation, switching and recovery |
 | `src/renderer/` | Interface, RTL/LTR aware |
 | `scripts/` | Payload collection and icon generation |
 | `main.js` | Windows, IPC, settings, payload and add-on resolution |
@@ -530,15 +607,26 @@ event and the renderer decides the wording.
 عن طريق مساعد 64 بت مرفق، وألعاب DirectX 9 تُجهّز تلقائياً عبر dgVoodoo2؛ ما
 تحتاج تختار أدون 64 بت للعبة 32 بت.
 
-إصدار **2.1.1** يضيف DLSS5-Feeder لألعاب 64 بت التي لا تحتوي DLSS أصلياً،
-ويدعم محاكيات DuckStation وPCSX2 وRPCS3 وDolphin وPPSSPP وXenia وCemu
-وغيرها مع Direct3D وVulkan وOpenGL. كما يصلح DuckStation وRDR2، ويمنع ظهور
-مجلدات ReShade والنسخ الاحتياطية كأنها ألعاب، ويحافظ على زر استعادة الملفات
-الأصلية حتى إذا فشل تثبيت ReShade جزئياً.
+أهم ميزة في **2.2.0** هي **OptiScaler DLSS-NR كخيار إضافي داخل صفحة اللعبة**،
+مع بقاء ReShade هو الافتراضي. هذا الخيار يتطلب RTX 50 وتعريف 616.56 أو أحدث
+ولعبة 64 بت تدعم DLSS أصلياً؛ لا يشمل المحاكيات أو الألعاب التي لا تحتوي DLSS.
+يمكن الرجوع إلى ReShade مع الحفاظ على إعدادات كل مسار. Vulkan يحتاج استعادة
+الأصل أولاً. التوافق وتحسن الأداء ليسا مضمونين لكل لعبة.
+
+أضفنا البحث الفوري والفلاتر، ودمج المكتبات بدون أقسام، وقائمة زر الفأرة الأيمن،
+وحفظ السجل مع نسخ الهستري واللوق. التحذيرات والبحث والفلاتر ونوافذ التأكيد
+تدعم اللغات الـ38. ألعاب مكافحة الغش تظهر تحذيراً أحمر مع قبول صريح للمخاطر
+لكل محاولة، وليس حظراً شاملاً؛ البرنامج لا يعطّل مكافحة الغش ولا يتجاوزها.
+
+يستمر دعم محاكيات DuckStation وPCSX2 وRPCS3 وDolphin وPPSSPP وXenia وCemu
+وغيرها عبر ReShade/Feeder. أُضيف مسار DX8 وتحسّن DX9 واختيار Feeder لـSWTOR،
+والتحقق من ملفات التشغيل والنسخ الاحتياطي. إصلاح واجهة Xenia تجريبي، وأعطال
+Midnight Suns وRE5 وGTA IV تحتاج سجلات المستخدمين؛ لا ندّعي حلها جميعاً.
 
 ملفات التشغيل الأساسية مدمجة داخل البرنامج. عند اختيار Feeder يجلب البرنامج
 LumeniteFX مباشرة من مستودع المؤلف الرسمي ويتحقق من بصمته؛ وإذا لم يتوفر
-الإنترنت يستخدم VORT المدمج. صور الألعاب فقط تُجلب من ستيم، بلا حساب أو مفاتيح.
+الإنترنت يستخدم VORT المدمج. OptiScaler وdgVoodoo2 يُنزّلان عند الحاجة مع
+التحقق من البصمة. صور الألعاب تُجلب من ستيم، بلا حساب أو مفاتيح.
 
 زر **رجّع الأصلي** يرجّع كل ملف لمكانه ويحذف اللي أضافه.
 
