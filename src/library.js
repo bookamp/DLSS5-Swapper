@@ -3,6 +3,7 @@
 // Everything here is a read: no network, no accounts, nothing written back to
 // any launcher.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
@@ -50,32 +51,57 @@ function steamPoster(steamRoot, appid) {
   return null;
 }
 
-function steam() {
-  const root = reg('HKCU\\Software\\Valve\\Steam', 'SteamPath');
-  if (!root) return [];
-  const base = root.replace(/\//g, '\\');
+function linuxSteamRoots(home = os.homedir(), env = process.env) {
+  // Steam has used both of these locations over time.  Do not resolve the
+  // ~/.steam/steam symlink: its path is also useful to portable installs.
+  const dataHome = env.XDG_DATA_HOME || path.join(home, '.local', 'share');
+  return [...new Set([
+    path.join(dataHome, 'Steam'),
+    path.join(home, '.steam', 'steam'),
+    // Flatpak keeps its Steam data outside XDG_DATA_HOME.
+    path.join(home, '.var', 'app', 'com.valvesoftware.Steam', 'data', 'Steam')
+  ])].filter((dir) => fs.existsSync(path.join(dir, 'steamapps')));
+}
 
-  const libraries = new Set([base]);
-  try {
-    const vdf = fs.readFileSync(path.join(base, 'steamapps', 'libraryfolders.vdf'), 'utf8');
-    for (const m of vdf.matchAll(/"path"\s+"([^"]+)"/g)) libraries.add(m[1].replace(/\\\\/g, '\\'));
-  } catch {}
+function steam(options = {}) {
+  const platform = options.platform || process.platform;
+  const roots = options.roots || (platform === 'linux'
+    ? linuxSteamRoots(options.home, options.env)
+    : [reg('HKCU\\Software\\Valve\\Steam', 'SteamPath')].filter(Boolean));
+  if (!roots.length) return [];
 
   const games = [];
-  for (const lib of libraries) {
-    const appsDir = path.join(lib, 'steamapps');
-    let files = [];
-    try { files = fs.readdirSync(appsDir).filter((f) => /^appmanifest_\d+\.acf$/.test(f)); } catch { continue; }
-    for (const f of files) {
-      let text;
-      try { text = fs.readFileSync(path.join(appsDir, f), 'utf8'); } catch { continue; }
-      const appid = kv(text, 'appid');
-      const installdir = kv(text, 'installdir');
-      const name = kv(text, 'name') || installdir;
-      if (!appid || !installdir || NOT_A_GAME.test(name)) continue;
-      const dir = path.join(appsDir, 'common', installdir);
-      if (!fs.existsSync(dir)) continue;
-      games.push({ launcher: 'Steam', id: appid, name, dir, poster: steamPoster(base, appid) });
+  for (const root of roots) {
+    const base = platform === 'win32' ? root.replace(/\//g, '\\') : root;
+
+    const libraries = new Set([base]);
+    try {
+      const vdf = fs.readFileSync(path.join(base, 'steamapps', 'libraryfolders.vdf'), 'utf8');
+      for (const m of vdf.matchAll(/"path"\s+"([^"]+)"/g)) libraries.add(m[1].replace(/\\\\/g, '\\'));
+    } catch {}
+
+    for (const lib of libraries) {
+      const appsDir = path.join(lib, 'steamapps');
+      let files = [];
+      try { files = fs.readdirSync(appsDir).filter((f) => /^appmanifest_\d+\.acf$/.test(f)); } catch { continue; }
+      for (const f of files) {
+        let text;
+        try { text = fs.readFileSync(path.join(appsDir, f), 'utf8'); } catch { continue; }
+        const appid = kv(text, 'appid');
+        const installdir = kv(text, 'installdir');
+        const name = kv(text, 'name') || installdir;
+        if (!appid || !installdir || NOT_A_GAME.test(name)) continue;
+        const dir = path.join(appsDir, 'common', installdir);
+        if (!fs.existsSync(dir)) continue;
+        games.push({
+          launcher: 'Steam', id: appid, name, dir, poster: steamPoster(base, appid),
+          steamRoot: base,
+          // A prefix only exists for titles launched through Steam Play. This
+          // metadata lets the installer run the Windows ReShade setup in the
+          // same Proton bottle as the game instead of invoking a host Wine.
+          protonPrefix: platform === 'linux' ? path.join(base, 'steamapps', 'compatdata', appid, 'pfx') : null
+        });
+      }
     }
   }
   return games;
@@ -249,4 +275,4 @@ function discover(extraFolders = [], scanDrives = false, excludedRoots = [], fin
   return { games: dedupe(filterExcluded(found, excludedRoots)), roots };
 }
 
-module.exports = { discover, folder, dedupe, autoRoots, drives, isInside, filterExcluded };
+module.exports = { discover, folder, dedupe, autoRoots, drives, isInside, filterExcluded, steam, linuxSteamRoots };

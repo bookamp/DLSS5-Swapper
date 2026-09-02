@@ -11,7 +11,7 @@
 <p align="center">
   <a href="../../releases/latest"><img src="https://img.shields.io/github/v/release/rakanki911/DLSS5-Swapper?style=flat-square&color=8fd400&label=release&cacheSeconds=300" alt="Release"></a>
   <a href="../../releases"><img src="https://img.shields.io/github/downloads/rakanki911/DLSS5-Swapper/total?style=flat-square&color=8fd400&label=downloads&cacheSeconds=300" alt="Downloads"></a>
-  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-8fd400?style=flat-square" alt="Windows">
+  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20%7C%20Linux%20(Proton)-8fd400?style=flat-square" alt="Windows and Linux Proton">
   <img src="https://img.shields.io/badge/languages-38-8fd400?style=flat-square" alt="38 languages">
   <img src="https://img.shields.io/badge/licence-MIT-8fd400?style=flat-square" alt="MIT">
 </p>
@@ -31,6 +31,16 @@
 
 Get either from the [**Releases**](../../releases) page. Windows 10/11 64-bit
 and an NVIDIA RTX card. Nothing else to install.
+
+### Linux (Steam Play / Proton)
+
+Linux builds are available as AppImage and `.deb`. They support **Windows games
+run through Steam Proton**: Steam libraries are discovered from the standard
+Linux locations and ReShade Setup runs inside the game's existing Proton
+prefix. Launch the game once with a Proton compatibility tool selected before
+installing. Native Linux games are not supported because the DLSS 5 and ReShade
+payloads are Windows DLLs. The Vulkan Feeder route is not available on Linux;
+select a DirectX renderer for Proton games.
 
 > Not code-signed, so SmartScreen shows *"Windows protected your PC"* the first
 > time. Click **More info → Run anyway**.
