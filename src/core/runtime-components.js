@@ -7,6 +7,34 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const extractZip = require('extract-zip');
+const pe = require('./pe');
+
+const DGVOODOO = {
+  version: '2.87.4',
+  url: 'https://github.com/dege-diosg/dgVoodoo2/releases/download/v2.87.4/dgVoodoo2_87_4.zip',
+  sha256: '74aeb464d829db80e3f4aa8fae235e6e3b38fc01188776c5c2376bb0dea0956e'
+};
+
+async function ensureDgVoodoo(cacheRoot) {
+  const base = path.join(path.resolve(cacheRoot), 'components', `dgVoodoo2-${DGVOODOO.version}`);
+  const archive = base + '.zip';
+  if (!fs.existsSync(archive) || digest(archive) !== DGVOODOO.sha256) await download(DGVOODOO.url, archive);
+  if (digest(archive) !== DGVOODOO.sha256) throw new Error('dgVoodoo2 SHA-256 verification failed');
+  // Re-extract the verified archive, never trust previously cached loose DLLs.
+  await extractZip(archive, { dir: base });
+  return base;
+}
+
+function missingVCRuntime(bitness, exeDir, systemRoot = process.env.SystemRoot, extra = []) {
+  if (!systemRoot) return [];
+  const systemDir = path.join(systemRoot, bitness === 32 ? 'SysWOW64' : 'System32');
+  const names = ['msvcp140.dll', 'vcruntime140.dll', ...(bitness === 64 ? ['vcruntime140_1.dll'] : []), ...extra];
+  return names.filter(name => {
+    const local = exeDir && path.join(exeDir, name);
+    const file = local && fs.existsSync(local) ? local : path.join(systemDir, name);
+    return pe.getBitness(file) !== bitness;
+  });
+}
 
 const LUMENITE = {
   commit: '76fa3e4d601c97e9bc63f119c01405b7b9938885',
@@ -58,4 +86,4 @@ async function ensureLumenite(cacheRoot) {
   return root;
 }
 
-module.exports = { LUMENITE, ensureLumenite, digest };
+module.exports = { LUMENITE, DGVOODOO, ensureLumenite, ensureDgVoodoo, missingVCRuntime, digest, download };

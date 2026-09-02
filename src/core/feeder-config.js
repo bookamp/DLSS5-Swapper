@@ -4,6 +4,10 @@ const fs = require('fs');
 const path = require('path');
 
 function sectionBounds(lines, section) {
+  if (section === '') {
+    const end = lines.findIndex(line => /^\s*\[.+\]\s*$/.test(line));
+    return { start: -1, end: end === -1 ? lines.length : end };
+  }
   const header = `[${section}]`.toLowerCase();
   const start = lines.findIndex((line) => line.trim().toLowerCase() === header);
   if (start === -1) return null;
@@ -83,6 +87,8 @@ function configureGameReShade(text, provider = 2) {
     getIni(out, 'GENERAL', 'TextureSearchPaths'), '.\\reshade-shaders\\Textures\\**'
   ));
   out = setIni(out, 'GENERAL', 'PresetPath', getIni(out, 'GENERAL', 'PresetPath') || '.\\ReShadePreset.ini');
+  out = setIni(out, 'GENERAL', 'StartupPresetPath', '');
+  out = setIni(out, 'GENERAL', 'NoReloadOnInit', '0');
   const definitions = mergeNamedList(
     getIni(out, 'GENERAL', 'PreprocessorDefinitions'),
     [`DLSS5_MV_PROVIDER=${provider}`],
@@ -94,10 +100,24 @@ function configureGameReShade(text, provider = 2) {
 }
 
 function configureHostReShade(text) {
-  return setIni(String(text || ''), 'ADDON', 'AddonPath', '.\\');
+  return configureConsumer(setIni(String(text || ''), 'ADDON', 'AddonPath', '.\\'), { host: true });
 }
 
-function configurePreset(text, provider = 2) {
+function configureConsumer(text, { host = false, xenia = false } = {}) {
+  let out = String(text || '');
+  for (const [key, value] of Object.entries({ EnableHooks: '2', NeuralUplift: '1', NREnableUpscaling: '0' })) {
+    out = setIni(out, 'RenoDX.DLSS5', key, value);
+  }
+  if (host) out = setIni(out, 'RenoDX.DLSS5', 'NRToggleKey', '0');
+  if (getIni(out, 'RenoDX.DLSS5', 'NRStyle') === '2') out = setIni(out, 'RenoDX.DLSS5', 'NRStyle', '0');
+  if (xenia) {
+    out = setIni(out, 'RenoDX.DLSS5', 'NRAutoMask', '1');
+    out = setIni(out, 'RenoDX.DLSS5', 'NRUICorrection', '1');
+  }
+  return out;
+}
+
+function configurePreset(text, provider = 2, { xenia = false } = {}) {
   let out = String(text || '');
   const providerTechnique = provider === 3
     ? 'Lumenite_Kernel@lumenite_Kernel.fx'
@@ -105,37 +125,42 @@ function configurePreset(text, provider = 2) {
   const required = [providerTechnique, 'DLSS5_Feed@DLSS5_Feed.fx'];
   const techniqueName = (item) => item.split('@')[0].trim();
   const feederTechniques = new Set([
-    'Lumenite_Kernel', 'Lumenite_QuantMotion', 'vort_MotionEffects', 'DLSS5_Feed'
+    'Lumenite_Kernel', 'Lumenite_QuantMotion', 'vort_MotionEffects', 'DLSS5_Feed', 'Launchpad'
   ].map((name) => name.toLowerCase()));
   for (const key of ['Techniques', 'TechniqueSorting']) {
-    const current = (out.match(new RegExp(`^\\s*${key}\\s*=\\s*(.*)$`, 'mi')) || [])[1];
+    const current = getIni(out, '', key);
     // ReShade's preset keys live before any section. Handle that root area
     // directly, while preserving every unrelated setting and technique.
     const kept = String(current || '').split(',').map((item) => item.trim()).filter(Boolean)
       .filter((item) => !feederTechniques.has(techniqueName(item).toLowerCase()));
     const next = [...required, ...kept].join(',');
-    const rx = new RegExp(`^\\s*${key}\\s*=.*$`, 'mi');
-    if (rx.test(out)) out = out.replace(rx, `${key}=${next}`);
-    else out = `${key}=${next}\r\n${out}`;
+    out = setIni(out, '', key, next);
   }
   const definitions = mergeNamedList(
-    (out.match(/^\s*PreprocessorDefinitions\s*=\s*(.*)$/mi) || [])[1],
+    getIni(out, '', 'PreprocessorDefinitions'),
     [`DLSS5_MV_PROVIDER=${provider}`],
     (item) => item.split('=')[0].trim()
   );
-  if (/^\s*PreprocessorDefinitions\s*=/mi.test(out)) {
-    out = out.replace(/^\s*PreprocessorDefinitions\s*=.*$/mi, `PreprocessorDefinitions=${definitions}`);
-  } else {
-    out = `PreprocessorDefinitions=${definitions}\r\n${out}`;
+  out = setIni(out, '', 'PreprocessorDefinitions', definitions);
+  // Per-effect definitions override the preset/global list in ReShade.
+  // Repair the stale provider=0 reported in SWTOR at every applicable level.
+  out = setIni(out, 'DLSS5_Feed.fx', 'PreprocessorDefinitions', mergeNamedList(
+    getIni(out, 'DLSS5_Feed.fx', 'PreprocessorDefinitions'),
+    [`DLSS5_MV_PROVIDER=${provider}`], item => item.split('=')[0].trim()
+  ));
+  if (xenia) {
+    for (const [key, value] of Object.entries({ GEOM_ENABLE: '0', MV_VALIDATE: '1', VALIDATE_STATIC: '1', VALIDATE_LUMA: '1', VALIDATE_DEPTH: '1', VALIDATE_MV: '1', MASK_STRENGTH: '1.0' })) {
+      out = setIni(out, 'DLSS5_Feed.fx', key, value);
+    }
   }
-  return out.replace(/(?:\r?\n)*$/, '\r\n');
+  return out.replace(/\r?\n/g, '\r\n').replace(/(?:\r\n)*$/, '\r\n');
 }
 
 const FEED_DEFAULTS = {
   enabled: '1', mode: '2', hdr: '-1', depth_inverted: '-1', flags: '-1',
   reset_every: '0', warmup_rebuild: '180', rebuild: '0', log_frames: '3',
   create_delay: '60', preset: '0', work_resolution: '100',
-  mv_scale_x: '1.000', mv_scale_y: '1.000', host_window: '1'
+  mv_scale_x: '1.000', mv_scale_y: '1.000', host_window: '0', async_home: '1'
 };
 
 function configureFeed(text) {
@@ -172,11 +197,14 @@ function presetPath(exeDir, reshadeIniText) {
 }
 
 function readText(file) {
-  try { return fs.readFileSync(file, 'utf8'); } catch { return ''; }
+  try {
+    const bytes = fs.readFileSync(file);
+    return bytes[0] === 0xff && bytes[1] === 0xfe ? bytes.subarray(2).toString('utf16le') : bytes.toString('utf8').replace(/^\uFEFF/, '');
+  } catch { return ''; }
 }
 
 module.exports = {
   getIni, setIni, configureGameReShade, configureHostReShade,
   configurePreset, configureFeed, configureDgVoodoo, presetPath, readText,
-  configureSearchPath
+  configureSearchPath, configureConsumer
 };

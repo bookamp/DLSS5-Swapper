@@ -210,15 +210,30 @@ function folder(root, label = 'My folders', onlyGames = false) {
 // different installs, so both are kept; only the exact same folder is merged.
 function dedupe(games) {
   const seen = new Map();
-  for (const g of games) {
+  for (const entry of games) {
+    const g = canonicalGame(entry);
     const key = path.resolve(g.dir).toLowerCase();
     const existing = seen.get(key);
     // A launcher entry carries a real name and art, so it wins over a folder.
-    if (!existing || (existing.launcher.startsWith('My folders') && !g.launcher.startsWith('My folders'))) {
+    const dlc = game => /\bdlc\b|phantom liberty/i.test(game.name || '');
+    if (!existing || (dlc(existing) && !dlc(g)) ||
+        (!dlc(g) && existing.launcher.startsWith('My folders') && !g.launcher.startsWith('My folders'))) {
       seen.set(key, g);
     }
   }
   return [...seen.values()];
+}
+
+function canonicalGame(game) {
+  // Phantom Liberty can leave its own launcher record pointing at the base
+  // game's directory. There is one runnable game, not a second DLC executable.
+  // Only canonicalise when the real base-game binary is present at that path.
+  if (/cyberpunk|phantom liberty/i.test(game.name || '') &&
+      fs.existsSync(path.join(game.dir, 'bin', 'x64', 'Cyberpunk2077.exe'))) {
+    return { ...game, name: 'Cyberpunk 2077', ...(game.launcher === 'Steam'
+      ? { id: '1091500', poster: game.id === '1091500' ? game.poster : null } : {}) };
+  }
+  return game;
 }
 
 function normalized(file) {

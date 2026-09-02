@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { writePe } = require('./fixtures/pe');
 
 const { applySwap, restore } = require('../src/core/apply');
 
@@ -36,8 +37,8 @@ test('encrypted Xbox executable installs ReShade through the readable x64 helper
     hasNeuralRendering: true,
     addon: put(path.join(payloadDir, 'renodx-dlss5.addon64')),
     payload: [
-      { name: 'nvngx_dlss.dll', path: put(path.join(payloadDir, 'nvngx_dlss.dll')), version: '310.8.0.0' },
-      { name: 'nvngx_dlssnr.dll', path: put(path.join(payloadDir, 'nvngx_dlssnr.dll')), version: '310.8.0.0' }
+      { name: 'nvngx_dlss.dll', path: writePe(path.join(payloadDir, 'nvngx_dlss.dll')), version: '310.8.0.0' },
+      { name: 'nvngx_dlssnr.dll', path: writePe(path.join(payloadDir, 'nvngx_dlssnr.dll')), version: '310.8.0.0' }
     ],
     feeder: {
       host64: put(path.join(payloadDir, 'feeder', 'dlss5-feed-host64.exe'), 'readable x64 helper')

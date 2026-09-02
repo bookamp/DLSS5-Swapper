@@ -2,7 +2,7 @@
 // DLSS 5 Swapper
 // Finds the games already on the machine and installs DLSS 5 Neural
 // Rendering into them, using the scanners in src/core.
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Menu } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -11,10 +11,33 @@ const crypto = require('crypto');
 const { scanGame } = require('./src/core/scan.js');
 const { discover, folder, dedupe, isInside } = require('./src/library');
 const art = require('./src/steamart');
-const { applySwap, restore, backupRoot } = require('./src/core/apply.js');
+const { backupRoot } = require('./src/core/apply.js');
 const { scanSource } = require('./src/core/scan.js');
 const pe = require('./src/core/pe.js');
-const { ensureLumenite } = require('./src/core/runtime-components.js');
+const { ensureLumenite, ensureDgVoodoo, missingVCRuntime } = require('./src/core/runtime-components.js');
+const installRoutes = require('./src/shared/install-routes');
+const optiscaler = require('./src/core/optiscaler');
+const backends = require('./src/core/backend-manager');
+const journal = require('./src/core/file-journal');
+const guards = require('./src/core/install-guards');
+const compatibility = require('./src/core/compatibility');
+const antiCheatWarning = require('./src/shared/anti-cheat-warning');
+const featureI18n = require('./src/shared/feature-i18n');
+const featureText = (key, ...args) => featureI18n.t(loadState().lang, key, ...args);
+const vulkanLayer = require('./src/core/vulkan-layer');
+const { HistoryStore, knownFolders, fromManifests } = require('./src/core/history');
+const gameMenu = require('./src/core/game-menu');
+let historyStore;
+const history = () => historyStore || (historyStore = new HistoryStore(path.join(app.getPath('userData'), 'history.jsonl')));
+const gameName = dir => lastGames.find(game => keyFor(game.dir) === keyFor(dir))?.name || path.basename(dir);
+function saveOperation(dir, manifest, action, send) {
+  try { history().record(dir, manifest, action, gameName(dir)); }
+  catch (error) {
+    // The game operation succeeded. Report the separate history write failure.
+    // HistoryStore retains the row in memory for a later retry.
+    send({ code: 'historySaveWarning', params: { error: error.message } });
+  }
+}
 
 // ---------- add-on builds ----------
 // The integrated RenoDX build is always installed and is not presented as an
@@ -161,9 +184,9 @@ let win = null;
 const stateFile = () => path.join(app.getPath('userData'), 'library.json');
 const posterDir = () => path.join(app.getPath('userData'), 'posters');
 const keyFor = (dir) => crypto.createHash('sha1').update(path.resolve(dir).toLowerCase()).digest('hex').slice(0, 16);
-// Bump when executable or API detection changes so an old wrong result is not
+// Bump when scan metadata or detection changes so an old wrong result is not
 // kept forever merely because the folder was scanned by an earlier release.
-const SCAN_RULES = 2;
+const SCAN_RULES = 6;
 
 function loadState() {
   try {
@@ -189,7 +212,8 @@ function posterUrl(game, state) {
   if (custom && fs.existsSync(custom)) return { url: pathToFileURL(custom).href, tall: true, custom: true };
   // Art fetched earlier is already on disk; use it before the
   // launcher's own cache, which is often only a wide header.
-  const saved = state.art && state.art[key];
+  const record = state.art && state.art[key];
+  const saved = record?.rules === ART_RULES ? record : null;
   if (saved && saved.cover) return { url: saved.cover, tall: true, custom: false };
   // A game too new for a portrait capsule still has a banner. The grid knows
   // how to show a wide image, which beats falling back to two initials.
@@ -246,6 +270,7 @@ ipcMain.handle('boot', () => {
     version: require('./package.json').version,
     theme: state.theme || 'light',
     lang: state.lang || 'en',
+    groupGamesByStore: state.groupGamesByStore !== false,
     logo: asUrl('logo.png'),
     logoDark: asUrl('logo-dark.png')
   };
@@ -265,32 +290,24 @@ ipcMain.handle('set-theme', (_event, theme) => {
   return theme;
 });
 
-// Every game folder that carries a backup manifest, newest first.
+// Import legacy backups from known locations only. Do not scan all drives.
 ipcMain.handle('history', () => {
-  const state = loadState();
-  const rows = [];
-  const dirs = new Set([...state.manual, ...state.folders.flatMap((root) => {
-    try { return fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(root, e.name)); }
-    catch { return []; }
-  })]);
-  for (const dir of dirs) {
-    for (const name of ['manifest.json', 'manifest.json.done']) {
-      const file = path.join(dir, '_DLSS5_Backup', name);
-      if (!fs.existsSync(file)) continue;
-      try {
-        const m = JSON.parse(fs.readFileSync(file, 'utf8'));
-        rows.push({
-          name: path.basename(dir),
-          dir,
-          date: m.date,
-          replaced: (m.replaced || []).length,
-          added: (m.added || []).length,
-          undone: name.endsWith('.done')
-        });
-      } catch {}
-    }
-  }
-  return rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  let warning = false;
+  const rows = history().list(mutationBusy ? [] : knownFolders(loadState(), lastGames), () => { warning = true; });
+  return { rows, warning };
+});
+
+ipcMain.handle('copy-text', (_event, text) => {
+  if (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text, 'utf8') > 16 * 1024 * 1024) return false;
+  try { clipboard.writeText(text); return true; } catch { return false; }
+});
+
+ipcMain.handle('game-menu', async (event, dir, options) => {
+  if (typeof dir !== 'string' || !path.isAbsolute(dir)) return null;
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window || window.isDestroyed()) return null;
+  return gameMenu.show({ Menu, dialog, window, dir, name: gameName(dir),
+    labels: options?.labels, position: options?.position, busy: mutationBusy || options?.busy === true });
 });
 
 ipcMain.handle('settings', () => {
@@ -301,8 +318,16 @@ ipcMain.handle('settings', () => {
     folders: state.folders, stateFile: stateFile(), posterDir: posterDir(), posterCount,
     roots: lastRoots,
     excludedRoots: state.excludedRoots || [],
-    autoScanDrives: state.autoScanDrives === true
+    autoScanDrives: state.autoScanDrives === true,
+    groupGamesByStore: state.groupGamesByStore !== false
   };
+});
+
+ipcMain.handle('set-group-games-by-store', (_event, enabled) => {
+  const state = loadState();
+  state.groupGamesByStore = enabled === true;
+  saveState(state);
+  return state.groupGamesByStore;
 });
 
 ipcMain.handle('set-auto-scan-drives', (_event, enabled) => {
@@ -326,6 +351,7 @@ ipcMain.handle('add-game-path', (_event, dir) => {
 // The roots found on the drives, kept so Settings can show what was searched
 // without paying for the sweep twice.
 let lastRoots = [];
+let lastGames = [];
 
 ipcMain.handle('library', () => {
   const state = loadState();
@@ -342,7 +368,7 @@ ipcMain.handle('library', () => {
   );
 
   const hidden = new Set(state.hidden.map((d) => d.toLowerCase()));
-  return dedupe(games)
+  lastGames = dedupe(games)
     .filter((g) => !hidden.has(path.resolve(g.dir).toLowerCase()))
     .map((g) => ({
       key: keyFor(g.dir),
@@ -357,6 +383,7 @@ ipcMain.handle('library', () => {
         ? state.scans[keyFor(g.dir)]
         : null
     }));
+  return lastGames;
 });
 
 // Scanning 37 folders takes seconds, so each card asks for its own result and
@@ -368,14 +395,18 @@ ipcMain.handle('scan', async (_event, dir) => {
     const scan = await scanGame(dir);
     const dlss = scan.primaryDlss;
     const result = {
+      dir,
       ok: Boolean(scan.chosen),
+      installable: installRoutes.routesFor(scan.chosen).length > 0,
       api: scan.chosen ? scan.chosen.apiLabel : null,
       bitness: scan.chosen ? scan.chosen.bitness : null,
       dx12: Boolean(scan.chosen && scan.chosen.apiLabel === 'DirectX 12'),
       exe: scan.chosen ? scan.chosen.rel : null,
       reason: scan.emptyReason || null,
       dlss: dlss ? dlss.version : null,
+      hasDlss: Boolean(dlss),
       addon: Boolean(scan.addonPresent),
+      optiscaler: Boolean(scan.install?.optiscaler?.installed),
       reshade: scan.reshade.installed ? scan.reshade.version : null,
       scannedAt: Date.now(),
       rules: SCAN_RULES
@@ -491,26 +522,13 @@ ipcMain.handle('touch', (_event, dir) => {
 // the backup manifests already sitting in the game folders - real installs
 // with real dates rather than an empty shelf.
 function recentsFromManifests(state) {
-  const rows = [];
-  const dirs = new Set([...(state.manual || []), ...(state.folders || []).flatMap((root) => {
-    try { return fs.readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(root, e.name)); }
-    catch { return []; }
-  })]);
-  for (const dir of dirs) {
-    // A folder can hold both an active manifest and an undone one; the game
-    // still belongs in the row once, dated by whichever happened last.
-    let newest = 0;
-    for (const name of ['manifest.json', 'manifest.json.done']) {
-      const file = path.join(dir, '_DLSS5_Backup', name);
-      if (!fs.existsSync(file)) continue;
-      try {
-        const at = Date.parse(JSON.parse(fs.readFileSync(file, 'utf8')).date);
-        if (at > newest) newest = at;
-      } catch {}
-    }
-    if (newest) rows.push({ dir, at: newest });
+  const latest = new Map();
+  for (const row of fromManifests(knownFolders(state, lastGames))) {
+    const key = keyFor(row.dir);
+    const at = Date.parse(row.date);
+    if (!latest.has(key) || latest.get(key).at < at) latest.set(key, { dir: row.dir, at });
   }
-  return rows.sort((a, b) => b.at - a.at).slice(0, 12);
+  return [...latest.values()].sort((a, b) => b.at - a.at).slice(0, 12);
 }
 
 ipcMain.handle('recents', () => {
@@ -664,7 +682,7 @@ ipcMain.handle('art-status', () => ({ available: art.available() }));
 
 // Bumped whenever the art picked for a game could change, so folders cached
 // under the old rule fetch again instead of keeping a bad banner forever.
-const ART_RULES = 3;
+const ART_RULES = 4;
 
 ipcMain.handle('art-fetch', async (_event, dir, name, appid) => {
   const state = loadState();
@@ -700,6 +718,7 @@ ipcMain.handle('art-fetch', async (_event, dir, name, appid) => {
 
 ipcMain.handle('details', async (_event, dir) => {
   const scan = await scanGame(dir);
+  const hasNativeDlss = installRoutes.nativeDlssPresent(scan);
   const files = [...scan.dlssFiles, ...scan.streamlineFiles]
     .map((f) => ({ rel: f.rel, name: f.name, version: f.version }));
   return {
@@ -713,18 +732,21 @@ ipcMain.handle('details', async (_event, dir) => {
     via: scan.chosen ? scan.chosen.via : null,
     emulator: scan.emulator,
     installedRoute: scan.install && scan.install.route,
+    antiCheatWarning: compatibility.hasAntiCheat(dir, scan.chosen?.path),
     installedApi: scan.install && scan.install.api,
     installedExe: scan.install && scan.install.exe,
-    recommendedRoute: (scan.emulator || !scan.primaryDlss) ? 'feeder' : 'native',
+    previousReShadeRoute: scan.install && scan.install.previousReShadeRoute,
+    optiscaler: scan.install && scan.install.optiscaler,
+    recommendedRoute: installRoutes.recommendedRoute(scan),
     exes: scan.exeCandidates.map((e) => ({
       rel: e.rel, path: e.path, apiLabel: e.apiLabel, api: e.api,
       bitness: e.bitness, size: e.size, via: e.via,
       emulator: e.emulator,
+      installIssue: compatibility.targetIssue(dir, e.path),
+      antiCheatWarning: compatibility.hasAntiCheat(dir, e.path),
+      hasNativeDlss,
       apiChoices: e.apiChoices || [{ api: e.api, label: e.apiLabel }],
-      routes: e.bitness === 32 || e.emulator
-        ? ['feeder']
-        : (e.api === 'd3d9' ? ['native']
-          : (e.api === 'dxgi' ? ['native', 'feeder'] : ['feeder']))
+      routes: installRoutes.routesFor({ ...e, hasNativeDlss })
     })),
     files,
     currentDlss: scan.primaryDlss ? {
@@ -734,12 +756,21 @@ ipcMain.handle('details', async (_event, dir) => {
     } : null,
     addon: scan.addonPresent,
     reshade: scan.reshade,
-    hasBackup: scan.hasBackup,
+    hasBackup: scan.hasBackup || fs.existsSync(journal.pendingPath(dir)),
     newDlss: (payload() || {}).source ? payload().source.dlssVersion : null
   };
 });
 
-ipcMain.handle('install', async (event, dir, exePath, requestedRoute, requestedApi) => {
+let mutationBusy = false;
+async function exclusiveMutation(work) {
+  if (mutationBusy) return { ok: false, code: 'errJobBusy' };
+  mutationBusy = true;
+  try { return await work(); }
+  catch (err) { return { ok: false, code: err.code, message: err.message }; }
+  finally { mutationBusy = false; }
+}
+
+ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) => exclusiveMutation(async () => {
   const p = payload();
   if (!p) return { ok: false, message: 'No payload found - run "npm run payload" in app/' };
   const scan = await scanGame(dir);
@@ -748,32 +779,81 @@ ipcMain.handle('install', async (event, dir, exePath, requestedRoute, requestedA
   // Honour the sheet's choice, but only if it is one of the candidates we
   // actually found - never patch a path the renderer made up.
   const target = scan.exeCandidates.find((e) => e.path === exePath) || scan.chosen;
+  compatibility.assertSafeTarget(dir, target.path);
+  target.hasNativeDlss = installRoutes.nativeDlssPresent(scan);
   const apiChoices = target.apiChoices || [{ api: target.api, label: target.apiLabel }];
   const api = apiChoices.some((item) => item.api === requestedApi) ? requestedApi : target.api;
-  const availableRoutes = target.bitness === 32 || target.emulator
-    ? ['feeder']
-    : (api === 'd3d9' ? ['native']
-      : (api === 'dxgi' ? ['native', 'feeder'] : ['feeder']));
-  const recommendedRoute = (target.emulator || !scan.primaryDlss) ? 'feeder' : 'native';
+  const availableRoutes = installRoutes.routesFor(target, api);
+  if (requestedRoute === 'optiscaler' && !availableRoutes.includes('optiscaler')) {
+    return { ok: false, code: installRoutes.optiReason(target, api) || 'optiUnsupported' };
+  }
+  if (!availableRoutes.length) return { ok: false, code: 'unsupportedRendererHint', message: 'This rendering API is not supported. Select the game’s DirectX 11 mode where available.' };
+  const recommendedRoute = installRoutes.recommendedRoute(scan, target);
   const route = availableRoutes.includes(requestedRoute) ? requestedRoute
     : (availableRoutes.includes(recommendedRoute) ? recommendedRoute : availableRoutes[0]);
 
   const send = (e) => event.sender.send('job', e);
+  await guards.assertGameClosed(dir, target.path);
+  if (fs.existsSync(journal.pendingPath(dir))) return { ok: false, code: 'errBackendRecovery' };
+  const old = backends.readManifest(dir);
+  const changed = old && (old.route !== route || old.game.api !== api || old.game.exe.toLowerCase() !== target.rel.toLowerCase());
+  if (changed && (old.game.api === 'vulkan' || api === 'vulkan')) return { ok: false, code: 'errBackendVulkanSwitch' };
+  let antiCheatAcknowledged = false;
+  if (compatibility.hasAntiCheat(dir, target.path)) {
+    const answer = await dialog.showMessageBox(win, antiCheatWarning.dialogOptions(loadState().lang, dir, target.path));
+    if (answer.response !== 1) return { ok: false, cancelled: true };
+    antiCheatAcknowledged = true;
+    send({ code: 'antiCheatRiskAccepted', params: {} });
+  }
+  let optiRoot = null;
+  if (route === 'optiscaler') {
+    optiscaler.checkConflicts(dir, target.path, old, api);
+    if (api === 'vulkan' && await vulkanLayer.existing(vulkanLayer.defaultRunner)) return { ok: false, code: 'errOptiVulkanLayer' };
+    const gpu = await guards.gpuInfo();
+    if (gpu && !guards.gpuSupported(gpu)) return { ok: false, code: 'errOptiHardware', message: gpu.map(g => `${g.name} — ${g.driver}`).join('\n') };
+    const confirmation = await dialog.showMessageBox(win, {
+      type: 'warning', title: 'OptiScaler DLSS-NR',
+      message: featureText('optiConfirm'),
+      detail: [gpu ? gpu.map(g => `${g.name} — ${g.driver}`).join('\n') : featureText('errOptiHardware'), featureText('optiHint'), featureText('optiBridgeHint'), featureText('backendHint')].join('\n\n'),
+      buttons: [featureText('installOpti'), featureText('cancel')], defaultId: 1, cancelId: 1
+    });
+    if (confirmation.response !== 0) return { ok: false, cancelled: true };
+    const missing = missingVCRuntime(64, path.dirname(target.path), process.env.SystemRoot, ['msvcp140_atomic_wait.dll']);
+    if (missing.length) return { ok: false, code: 'runtimeRequiredHint', message: missing.join(', ') };
+    send({ code: 'optiDownloading', params: {} });
+    try { optiRoot = await optiscaler.ensureOptiScaler(app.getPath('userData')); }
+    catch (err) { return { ok: false, code: 'errOptiDownload', message: err.message }; }
+    send({ code: 'optiVerified', params: { version: optiscaler.RELEASE.version } });
+  }
 
-  // Switching between the native and synthetic Feeder contracts must be a
-  // clean uninstall/install. Leaving both add-ons active makes ReShade load
-  // two NGX owners and commonly exits before the first frame.
-  const activeManifest = path.join(backupRoot(dir), 'manifest.json');
-  if (fs.existsSync(activeManifest)) {
-    try {
-      const old = JSON.parse(fs.readFileSync(activeManifest, 'utf8'));
-      const oldRoute = old.route || (old.game && old.game.bitness === 32 ? 'feeder' : 'native');
-      if (oldRoute !== route) {
-        await restore(dir, send);
-        send({ code: 'routeSwitched', params: { from: oldRoute, to: route } });
+  // Check before restoring or touching the game: these DLLs are imported by
+  // Feeder and its helper. Never report a working installation if absent.
+  if (route === 'feeder') {
+    if (!p.source.feeder || !(target.bitness === 32 ? p.source.feeder.ok32 : p.source.feeder.ok64)) {
+      return { ok: false, message: 'Feeder payload is incomplete or from mixed releases. Reinstall the updated Swapper package.' };
+    }
+    const checks = [[target.bitness, path.dirname(target.path)]];
+    if (target.bitness === 32) checks.push([64, path.join(path.dirname(target.path), 'host64')]);
+    for (const [bits, folder] of checks) {
+      const missing = missingVCRuntime(bits, folder);
+      if (missing.length) {
+        const response = await dialog.showMessageBox(win, {
+          type: 'warning', title: 'Microsoft Visual C++ Runtime',
+          message: featureText('runtimeRequiredHint'),
+          detail: `${bits === 32 ? 'x86' : 'x64'}\n${missing.join(', ')}\n${folder}`,
+          buttons: [featureText('runtimeDownload'), featureText('cancel')], cancelId: 1, defaultId: 0
+        });
+        if (response.response === 0) await shell.openExternal(`https://aka.ms/vc14/vc_redist.${bits === 32 ? 'x86' : 'x64'}.exe`);
+        return { ok: false, code: 'runtimeRequiredHint' };
       }
-    } catch (err) {
-      return { ok: false, code: err.code, message: err.message };
+    }
+    if (api === 'd3d8' || api === 'd3d9') {
+      try {
+        p.source.feeder.dgVoodooDir = await ensureDgVoodoo(app.getPath('userData'));
+        send({ code: 'legacyWrapperReady', params: { api, bitness: target.bitness } });
+      } catch (error) {
+        return { ok: false, code: 'legacyDownloadHint', message: error.message };
+      }
     }
   }
 
@@ -789,37 +869,27 @@ ipcMain.handle('install', async (event, dir, exePath, requestedRoute, requestedA
     }
   }
 
-  // An optional custom build with a different file name would sit beside the
-  // integrated one. Park unrelated old builds instead of deleting them:
-  // .disabled is ReShade's reversible convention for inactive add-ons.
-  // 32-bit games use the fixed v4.55 add-on inside the 64-bit helper. A loose
-  // 64-bit companion beside the 32-bit game cannot load and newer builds may
-  // conflict with the feeder contract.
+  // Only user-selected companion builds are installed. Leave unrelated
+  // add-ons alone; all managed copies now participate in the transaction.
   const companions = route === 'native' && target.bitness === 64 ? companionAddons() : [];
-  const exeDir = path.dirname(target.path);
-  const keep = new Set(route === 'feeder'
-    ? ['dlss5-feed.addon64', 'dlss5-feed.addon32', 'renodx-dlss5.addon64']
-    : [path.basename(p.source.addon).toLowerCase()]);
-  for (const c of companions) keep.add(path.basename(c).toLowerCase());
-  for (const f of fs.readdirSync(exeDir)) {
-    if (!/\.addon(64)?$/i.test(f) || keep.has(f.toLowerCase())) continue;
-    try {
-      fs.renameSync(path.join(exeDir, f), path.join(exeDir, f + '.disabled'));
-      send({ code: 'addonParked', params: { name: f } });
-    } catch (err) {
-      send({ code: 'addonParkFailed', params: { name: f, error: err.message } });
-    }
-  }
 
   try {
-    const manifest = await applySwap({
+    // A game could have been launched while the component download ran.
+    await guards.assertGameClosed(dir, target.path);
+    // Preserve the previous snapshot before a repeat install changes it.
+    history().list([{ dir, name: gameName(dir) }], error => send({ code: 'historySaveWarning', params: { error: error.message } }));
+    const manifest = await backends.install({
       gameDir: dir,
       exePath: target.path,
       api,
+      apiLabel: apiChoices.find(item => item.api === api)?.label || target.apiLabel,
       bitness: target.bitness,
       route,
+      antiCheatAcknowledged,
       emulator: target.emulator,
       source: p.source,
+      optiRoot,
+      companions,
       reshadeSetup: p.reshadeSetup,
       vulkanLayerTarget: path.join(app.getPath('userData'), 'reshade-vulkan'),
       installReShade: true,
@@ -827,33 +897,32 @@ ipcMain.handle('install', async (event, dir, exePath, requestedRoute, requestedA
       addStreamline: false,
       upgradeReShade: false
     }, send);
-    for (const companion of companions) {
-      const name = path.basename(companion);
-      const dest = path.join(exeDir, name);
-      const isNew = !fs.existsSync(dest);
-      fs.copyFileSync(companion, dest);
-      enableAddon(exeDir, name);
-      // applySwap has already written the manifest, and restore only deletes
-      // what that file lists - so this has to go in, or the companion would be
-      // left behind by "Restore originals".
-      if (isNew) {
-        manifest.added.push(path.relative(dir, dest));
-        fs.writeFileSync(path.join(backupRoot(dir), 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
-      }
-      send({ code: 'addonInstalled', params: { name } });
-    }
+    saveOperation(dir, manifest, 'install', send);
     return { ok: true, replaced: manifest.replaced.length, added: manifest.added.length };
   } catch (err) {
     return { ok: false, code: err.code, message: err.message };
   }
-});
+}));
 
-ipcMain.handle('restore', async (event, dir) => {
-  const send = (e) => event.sender.send('job', e);
+ipcMain.handle('restore', (event, dir) => exclusiveMutation(async () => {
+  let restoredManifest = null;
+  const send = (e) => {
+    if (e.code === 'restoreDone') restoredManifest = e.params;
+    event.sender.send('job', e);
+  };
   try {
-    await restore(dir, send);
+    let old = null;
+    try { old = backends.readManifest(dir); } catch (error) { if (!fs.existsSync(journal.pendingPath(dir))) throw error; }
+    // Recovery belongs to the manifest/journal, not the graphics scanner.
+    // A missing/updated/unrecognised executable must not strand our hooks.
+    if (!old && !fs.existsSync(journal.pendingPath(dir))) return { ok: false, code: 'errNoBackup' };
+    const exe = old ? journal.safePath(dir, old.game.exe) : null;
+    await guards.assertGameClosed(dir, exe);
+    history().list([{ dir, name: gameName(dir) }], error => send({ code: 'historySaveWarning', params: { error: error.message } }));
+    if (!await backends.restore(dir, send)) return { ok: false, code: 'errNoBackup' };
+    saveOperation(dir, restoredManifest || {}, restoredManifest ? 'restore' : 'recovery', send);
     return { ok: true };
   } catch (err) {
     return { ok: false, code: err.code, message: err.message };
   }
-});
+}));

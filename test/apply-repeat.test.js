@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { writePe } = require('./fixtures/pe');
 
 test('a second install preserves the originals for restore', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dlss5-repeat-'));
@@ -27,9 +28,9 @@ test('a second install preserves the originals for restore', async (t) => {
 
   fs.writeFileSync(exePath, 'fake executable');
   fs.writeFileSync(dlssPath, 'the user original');
-  fs.writeFileSync(sourceDlss, 'new dlss');
-  fs.writeFileSync(sourceNr, 'new neural runtime');
-  fs.writeFileSync(sourceFg, 'new frame generation');
+  writePe(sourceDlss, { text: 'new dlss' });
+  writePe(sourceNr, { text: 'new neural runtime' });
+  writePe(sourceFg, { text: 'new frame generation' });
   fs.writeFileSync(sourceAddon, 'new addon');
 
   let installed = false;
@@ -46,12 +47,12 @@ test('a second install preserves the originals for restore', async (t) => {
     filename: scanPath,
     loaded: true,
     exports: {
+      inspectReShade: () => ({ installed: true, file: 'dxgi.dll', kind: 'proxy', version: '6.8.0', addonSupport: true }),
       scanGame: async () => ({
         dlssFiles: [
-          { path: dlssPath, rel: 'nvngx_dlss.dll', name: 'nvngx_dlss.dll', version: installed ? '2.0.0' : '1.0.0' },
+          { path: dlssPath, rel: 'nvngx_dlss.dll', name: 'nvngx_dlss.dll', bitness: 64, version: installed ? '2.0.0' : '1.0.0' },
           ...(installed ? [
-            { path: nrPath, rel: 'nvngx_dlssnr.dll', name: 'nvngx_dlssnr.dll', version: '2.0.0' },
-            { path: fgPath, rel: 'nvngx_dlssg.dll', name: 'nvngx_dlssg.dll', version: '2.0.0' }
+            { path: nrPath, rel: 'nvngx_dlssnr.dll', name: 'nvngx_dlssnr.dll', bitness: 64, version: '2.0.0' }
           ] : [])
         ],
         streamlineFiles: [],
@@ -74,6 +75,7 @@ test('a second install preserves the originals for restore', async (t) => {
     gameDir,
     exePath,
     api: 'dxgi',
+    bitness: 64,
     source,
     reshadeSetup: null,
     installReShade: true,
@@ -90,7 +92,6 @@ test('a second install preserves the originals for restore', async (t) => {
   assert.deepEqual(manifest.replaced.map((row) => row.rel), ['nvngx_dlss.dll']);
   assert.deepEqual(new Set(manifest.added), new Set([
     'nvngx_dlssnr.dll',
-    'nvngx_dlssg.dll',
     'renodx-dlss5.addon64'
   ]));
 

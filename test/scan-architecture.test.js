@@ -8,6 +8,7 @@ const path = require('path');
 
 const pe = require('../src/core/pe');
 const { scanGame } = require('../src/core/scan');
+const { recommendedRoute } = require('../src/shared/install-routes');
 
 function minimalPe(file, { bitness = 32, marker = null } = {}) {
   const buf = Buffer.alloc(marker ? 300 * 1024 : 64 * 1024);
@@ -27,6 +28,22 @@ function minimalPe32(file, marker = null) {
   minimalPe(file, { bitness: 32, marker });
 }
 
+test('DX8 games, SWTOR x64 DX9 and unsupported DX10 retain their real API', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dlss5-legacy-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  for (const [name, bitness, marker, api] of [
+    ['LegacyDX8', 32, 'Direct3DCreate8', 'd3d8'],
+    ['swtor', 64, 'Direct3DCreate9', 'd3d9'],
+    ['LegacyDX10', 32, 'D3D10CreateDevice', 'd3d10']
+  ]) {
+    const dir = path.join(root, name);
+    minimalPe(path.join(dir, name + '.exe'), { bitness, marker });
+    const scan = await scanGame(dir);
+    assert.equal(scan.chosen.api, api);
+    assert.equal(scan.chosen.bitness, bitness);
+  }
+});
+
 test('Far Cry 3-style D3D11 executable is found and identified as 32-bit', async (t) => {
   const gameDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dlss5-fc3-'));
   t.after(() => fs.rmSync(gameDir, { recursive: true, force: true }));
@@ -42,6 +59,32 @@ test('Far Cry 3-style D3D11 executable is found and identified as 32-bit', async
   assert.equal(scan.chosen.apiLabel, 'DirectX 11');
   assert.equal(scan.chosen.via, 'filename');
   assert.equal(scan.chosen.bitness, 32);
+});
+
+test('explicit legacy renderer suffixes preserve DX8 and unsupported DX10', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dlss5-api-suffix-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  for (const api of ['d3d8', 'd3d10']) {
+    const dir = path.join(root, api);
+    minimalPe32(path.join(dir, `game_${api}.exe`));
+    const scan = await scanGame(dir);
+    assert.equal(scan.chosen.api, api);
+    assert.equal(scan.chosen.via, 'filename');
+  }
+});
+
+test('scanning keeps injected DLL provenance for route recommendation', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dlss5-injected-route-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  minimalPe(path.join(dir, 'game.exe'), { bitness: 64, marker: 'D3D12CreateDevice' });
+  minimalPe(path.join(dir, 'nvngx_dlss.dll'), { bitness: 64 });
+  fs.mkdirSync(path.join(dir, '_DLSS5_Backup'));
+  fs.writeFileSync(path.join(dir, '_DLSS5_Backup', 'manifest.json'), JSON.stringify({
+    route: 'native', added: ['nvngx_dlss.dll', null], game: { bitness: 64, api: 'dxgi' }
+  }));
+  const scan = await scanGame(dir);
+  assert.deepEqual(scan.install.added, ['nvngx_dlss.dll']);
+  assert.equal(recommendedRoute(scan), 'feeder');
 });
 
 test('Deus Ex Human Revolution DX11 executable enters the 32-bit feeder route', async (t) => {

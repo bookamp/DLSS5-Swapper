@@ -6,6 +6,9 @@ const fs = require('fs');
 const path = require('path');
 const pe = require('./pe');
 const emulators = require('./emulators');
+const crypto = require('crypto');
+const feederRelease = require('./feeder-release');
+const { safePath } = require('./file-journal');
 
 const SKIP_DIRS = new Set([
   '_dlss5_backup', 'reshade-shaders', 'host64', 'node_modules', '.git',
@@ -13,6 +16,7 @@ const SKIP_DIRS = new Set([
   // or executable we need. Skipping them lets packaged Unreal games be scanned
   // deeper without making every library refresh slower.
   'paks', 'movies', 'screenshots', 'saved', 'logs',
+  'mods', 'downloads', 'overwrite', 'profiles',
   '_redist', 'prerequisites', 'directx', 'redist', 'redistributable',
   'redistributables', '_commonredist', 'dotnet',
   // Shipped installers and vendor helpers keep their own executables around.
@@ -24,7 +28,7 @@ const SKIP_DIRS = new Set([
 const MAX_SCAN_DEPTH = 12;
 
 // Installers, launchers and anti-cheat helpers are never the game itself.
-const NOT_A_GAME = /^(unins|setup|install|vcredist|vc_redist|dxsetup|dxwebsetup|oalinst|uninstall|crashreport|crashhandler|easyanticheat|eac|battleye|be_service|launcher|activation|patch|update|dotnetfx|touchup|rapidcrc|autorun|autoplay|quicksfv|readme|config|benchmark|report|helper|service|cleanup)/i;
+const NOT_A_GAME = /^(unins|setup|install|vcredist|vc_redist|dxsetup|dxwebsetup|oalinst|uninstall|crashreport|crashhandler|easyanticheat|eac|battleye|be_service|launcher|activation|patch|update|dotnetfx|touchup|rapidcrc|autorun|autoplay|quicksfv|readme|config|benchmark|report|helper|service|cleanup|modorganizer|redlauncher|skse\d*_loader|hlds\b|srcds\b|steamerrorreporter|dgvoodoocpl|reshade_setup)/i;
 
 const DLSS_FILE = /^(nvngx_dlss[a-z_]*\.dll|nvngx\.dll|_nvngx\.dll)$/i;
 const STREAMLINE_FILE = /^sl\.[a-z_]+\.dll$/i;
@@ -100,16 +104,18 @@ const API_MARKERS = [
   // is one such layout, so those exports are authoritative D3D12 evidence too.
   'D3D12CreateDevice', 'D3D12SDKPath', 'D3D12SDKVersion',
   'D3D11CreateDevice', 'D3D10CreateDevice',
-  'Direct3DCreate9', 'CreateDXGIFactory', 'vkCreateInstance', 'wglCreateContext'
+  'Direct3DCreate9', 'Direct3DCreate8', 'CreateDXGIFactory', 'vkCreateInstance', 'wglCreateContext'
 ];
 
 function apiFromNames(imports) {
   const has = (n) => imports.includes(n);
   if (has('d3d12.dll')) return { api: 'dxgi', label: 'DirectX 12' };
   if (has('d3d11.dll')) return { api: 'dxgi', label: 'DirectX 11' };
+  if (has('d3d10.dll') || has('d3d10_1.dll')) return { api: 'd3d10', label: 'DirectX 10' };
   if (has('dxgi.dll')) return { api: 'dxgi', label: 'DirectX (DXGI)' };
   if (has('vulkan-1.dll')) return { api: 'vulkan', label: 'Vulkan' };
   if (has('d3d9.dll')) return { api: 'd3d9', label: 'DirectX 9' };
+  if (has('d3d8.dll')) return { api: 'd3d8', label: 'DirectX 8' };
   if (has('opengl32.dll')) return { api: 'opengl', label: 'OpenGL' };
   return null;
 }
@@ -120,9 +126,10 @@ function apiFromMarkers(file) {
     return { api: 'dxgi', label: 'DirectX 12' };
   }
   if (markers.has('D3D11CreateDevice')) return { api: 'dxgi', label: 'DirectX 11' };
-  if (markers.has('D3D10CreateDevice')) return { api: 'dxgi', label: 'DirectX 10' };
+  if (markers.has('D3D10CreateDevice')) return { api: 'd3d10', label: 'DirectX 10' };
   if (markers.has('CreateDXGIFactory')) return { api: 'dxgi', label: 'DirectX (DXGI)' };
   if (markers.has('Direct3DCreate9')) return { api: 'd3d9', label: 'DirectX 9' };
+  if (markers.has('Direct3DCreate8')) return { api: 'd3d8', label: 'DirectX 8' };
   if (markers.has('vkCreateInstance')) return { api: 'vulkan', label: 'Vulkan' };
   if (markers.has('wglCreateContext')) return { api: 'opengl', label: 'OpenGL' };
   return null;
@@ -186,8 +193,9 @@ function apiFromFileName(file) {
   const name = path.basename(file).toLowerCase();
   if (/(?:^|[_-])(?:d3d|dx)12(?:[_-]|\.|$)/.test(name)) return { api: 'dxgi', label: 'DirectX 12' };
   if (/(?:^|[_-])(?:d3d|dx)11(?:[_-]|\.|$)/.test(name)) return { api: 'dxgi', label: 'DirectX 11' };
-  if (/(?:^|[_-])(?:d3d|dx)10(?:[_-]|\.|$)/.test(name)) return { api: 'dxgi', label: 'DirectX 10' };
+  if (/(?:^|[_-])(?:d3d|dx)10(?:[_-]|\.|$)/.test(name)) return { api: 'd3d10', label: 'DirectX 10' };
   if (/(?:^|[_-])(?:d3d|dx)9(?:[_-]|\.|$)/.test(name)) return { api: 'd3d9', label: 'DirectX 9' };
+  if (/(?:^|[_-])(?:d3d|dx)8(?:[_-]|\.|$)/.test(name)) return { api: 'd3d8', label: 'DirectX 8' };
   if (/(?:^|[_-])vulkan(?:[_-]|\.|$)/.test(name)) return { api: 'vulkan', label: 'Vulkan' };
   if (/(?:^|[_-])(?:ogl|opengl)(?:[_-]|\.|$)/.test(name)) return { api: 'opengl', label: 'OpenGL' };
   return null;
@@ -226,15 +234,45 @@ function detectApi(file, imports) {
 
   const dir = path.dirname(file);
   for (const name of imports.slice(0, 80)) {
-    const sibling = path.join(dir, name);
+    if (path.basename(name) !== name || /[\\/:]/.test(name)) continue;
+    const sibling = findCaseInsensitive(dir, name);
     // System DLLs live in System32; only the game's own modules sit here.
-    if (!fs.existsSync(sibling)) continue;
+    if (!sibling || pe.getBitness(sibling) !== pe.getBitness(file)) continue;
     const inner = apiFromNames(pe.getImports(sibling)) || apiFromMarkers(sibling);
     if (inner) return { ...inner, via: 'module:' + name };
   }
 
   const named = apiFromFileName(file);
   if (named) return { ...named, via: 'filename' };
+  return detectEngineApi(file);
+}
+
+// Small Source/GoldSrc dispatchers and several Ubisoft/UE2 games load their
+// renderer dynamically from a separate module, not the executable's imports.
+// Only inspect modules belonging to these entry points, with matching PE
+// architecture and actual API evidence. A random DLL beside a tool is not
+// evidence that the tool is a game; injected graphics proxies are never used.
+function detectEngineApi(file) {
+  const modules = {
+    'hl.exe': ['hw.dll'],
+    'hl2.exe': ['bin/shaderapidx9.dll', 'bin/engine.dll', 'bin/x64/shaderapidx9.dll', 'bin/x64/engine.dll'],
+    'left4dead2.exe': ['bin/shaderapidx9.dll', 'bin/engine.dll'],
+    'killingfloor.exe': ['D3D9Drv.dll', 'D3DDrv.dll', 'OpenGLDrv.dll'],
+    'farcry5.exe': ['FC_m64.dll'],
+    'watch_dogs.exe': ['Disrupt_b64.dll']
+  }[path.basename(file).toLowerCase()];
+  if (!modules) return null;
+  const bitness = pe.getBitness(file);
+  for (const rel of modules) {
+    let module = path.dirname(file);
+    for (const part of rel.split('/')) {
+      module = findCaseInsensitive(module, part);
+      if (!module) break;
+    }
+    if (!module || pe.getBitness(module) !== bitness) continue;
+    const api = apiFromNames(pe.getImports(module)) || apiFromMarkers(module);
+    if (api) return { ...api, via: 'engine-module:' + rel };
+  }
   return null;
 }
 
@@ -300,9 +338,8 @@ async function scanGame(gameDir) {
         ? { ...emulators.apiChoices(emulator)[0], via: 'emulator-profile' }
         : (gameProfile ? gameProfile.detected : detectApi(full, pe.getImports(full)));
       if (!detected) return;
-      // Small generic launchers remain excluded, but a valid PE whose own file
-      // name states its renderer is often the real per-API game entry point.
-      if (!emulator && size < 256 * 1024 && detected.via !== 'filename') return;
+      // File size is not a game classifier. Genuine engine dispatchers can be
+      // only a few KB; retain them when PE/API evidence above is available.
       exeCandidates.push({
         path: full,
         rel: path.relative(gameDir, full),
@@ -409,8 +446,17 @@ async function scanGame(gameDir) {
         route: data.route || (data.game && data.game.bitness === 32 ? 'feeder' : 'native'),
         api: data.game && data.game.api,
         exe: data.game && data.game.exe,
+        previousReShadeRoute: data.previousReShadeRoute || null,
+        optiscaler: data.route === 'optiscaler' ? data.optiscaler : null,
+        added: Array.isArray(data.added) ? data.added.filter(item => typeof item === 'string') : [],
         vulkanLayer: data.vulkanLayer || null
       };
+      if (install.optiscaler) {
+        const exeDir = path.dirname(safePath(gameDir, data.game.exe));
+        const hook = safePath(gameDir, path.relative(gameDir, path.join(exeDir, install.optiscaler.hook)));
+        install.optiscaler.installed = pe.versionMentions(hook, 'OptiScaler') &&
+          ['nvngx.dll_dlssnr.dll', 'nvngx_dlssnr.dll', 'OptiScaler.ini'].every(name => fs.existsSync(path.join(exeDir, name)));
+      }
     } catch {}
   }
   let reshade = chosen ? inspectReShade(path.dirname(chosen.path)) : inspectReShade(gameDir);
@@ -469,6 +515,7 @@ function scanSource(sourceDir) {
   const nr = payload.find((f) => /^nvngx_dlssnr\.dll$/i.test(f.name));
   const feederDir = path.join(sourceDir, 'feeder');
   const feeder = {
+    version: feederRelease.version,
     addon64: path.join(feederDir, 'dlss5-feed.addon64'),
     addon32: path.join(feederDir, 'dlss5-feed.addon32'),
     host64: path.join(feederDir, 'dlss5-feed-host64.exe'),
@@ -478,6 +525,11 @@ function scanSource(sourceDir) {
     dgVoodooDir: path.join(feederDir, 'dgvoodoo'),
     vulkanLayerDir: path.join(sourceDir, 'reshade-vulkan')
   };
+  feeder.releaseVerified = Object.entries(feederRelease.hashes).every(([rel, expected]) => {
+    try {
+      return crypto.createHash('sha256').update(fs.readFileSync(path.join(feederDir, rel))).digest('hex') === expected;
+    } catch { return false; }
+  });
   feeder.ok32 = [feeder.addon32, feeder.host64, feeder.feedShader, feeder.hostAddon]
     .concat([
       path.join(feeder.shaderRoot, 'Shaders', 'vort_Motion.fx'),
@@ -494,6 +546,8 @@ function scanSource(sourceDir) {
     ]).every((file) => fs.existsSync(file));
   feeder.vulkanOk = ['ReShade64.dll', 'ReShade64.json', 'ReShade32.dll', 'ReShade32.json']
     .every((name) => fs.existsSync(path.join(feeder.vulkanLayerDir, name)));
+  feeder.ok32 = feeder.ok32 && feeder.releaseVerified;
+  feeder.ok64 = feeder.ok64 && feeder.releaseVerified;
   feeder.ok = feeder.ok32 && feeder.ok64;
   return {
     ok: payload.length > 0,
@@ -509,5 +563,5 @@ function scanSource(sourceDir) {
 }
 
 module.exports = {
-  scanGame, scanSource, walk, selectPrimaryDlss, xboxExecutables, playableRoleScore
+  scanGame, scanSource, walk, selectPrimaryDlss, xboxExecutables, playableRoleScore, inspectReShade
 };

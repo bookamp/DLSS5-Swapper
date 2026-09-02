@@ -43,3 +43,33 @@ test('dgVoodoo configuration enables the D3D9 to D3D11 route', () => {
   assert.match(output, /^VRAM=1024$/m);
   assert.match(output, /^dgVoodooWatermark=false$/m);
 });
+
+test('SWTOR per-effect provider overrides are repaired without changing other effects', () => {
+  const original = '[Other.fx]\nPreprocessorDefinitions=OTHER=7\n[DLSS5_Feed.fx]\nPreprocessorDefinitions=DLSS5_MV_PROVIDER=0,KEEP=8\n';
+  const preset = config.configurePreset(original, 3);
+  assert.equal(config.getIni(preset, '', 'PreprocessorDefinitions'), 'DLSS5_MV_PROVIDER=3');
+  assert.equal(config.getIni(preset, 'DLSS5_Feed.fx', 'PreprocessorDefinitions'), 'DLSS5_MV_PROVIDER=3,KEEP=8');
+  assert.equal(config.getIni(preset, 'Other.fx', 'PreprocessorDefinitions'), 'OTHER=7');
+  assert.match(config.getIni(preset, '', 'Techniques'), /^Lumenite_Kernel@.*DLSS5_Feed@/);
+  assert.equal(config.configurePreset(preset, 3), preset);
+});
+
+test('Feeder arms RenoDX and host hotkeys cannot accidentally switch NR off', () => {
+  const text = '[RenoDX.DLSS5]\nEnableHooks=0\nNeuralUplift=0\nNREnableUpscaling=1\nNRStyle=2\nNRToggleKey=117\nNRIntensity=0.75\n';
+  const ini = config.configureHostReShade(text);
+  assert.equal(config.getIni(ini, 'RenoDX.DLSS5', 'EnableHooks'), '2');
+  assert.equal(config.getIni(ini, 'RenoDX.DLSS5', 'NeuralUplift'), '1');
+  assert.equal(config.getIni(ini, 'RenoDX.DLSS5', 'NREnableUpscaling'), '0');
+  assert.equal(config.getIni(ini, 'RenoDX.DLSS5', 'NRStyle'), '0');
+  assert.equal(config.getIni(ini, 'RenoDX.DLSS5', 'NRToggleKey'), '0');
+  assert.equal(config.getIni(ini, 'RenoDX.DLSS5', 'NRIntensity'), '0.75');
+});
+
+test('Xenia mitigation disables experimental camera vectors and enables validation', () => {
+  const preset = config.configurePreset('[DLSS5_Feed.fx]\nGEOM_ENABLE=1\nMV_VALIDATE=0\n', 2, { xenia: true });
+  assert.equal(config.getIni(preset, 'DLSS5_Feed.fx', 'GEOM_ENABLE'), '0');
+  assert.equal(config.getIni(preset, 'DLSS5_Feed.fx', 'MV_VALIDATE'), '1');
+  const ini = config.configureConsumer('', { xenia: true });
+  assert.equal(config.getIni(ini, 'RenoDX.DLSS5', 'NRUICorrection'), '1');
+  assert.equal(config.getIni(ini, 'RenoDX.DLSS5', 'NRAutoMask'), '1');
+});

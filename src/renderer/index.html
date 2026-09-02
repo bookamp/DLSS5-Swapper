@@ -88,21 +88,34 @@
 
         <div class="section-head">
           <h3 data-i18n="logTitle">Activity Log</h3>
-          <button class="ghost sm" id="clearLog" data-i18n="clear">Clear</button>
+          <div class="row">
+            <button class="ghost sm" id="copyLog" data-i18n="copyLog" disabled>Copy log</button>
+            <button class="ghost sm" id="clearLog" data-i18n="clear">Clear</button>
+          </div>
         </div>
         <div class="glass log" id="log"></div>
       </section>
 
       <!-- GAMES -->
       <section class="view" id="view-games">
-        <div class="section-head">
-          <h3><span data-i18n="gamesTitle">Games</span> <span class="count" id="gamesCount"></span></h3>
+        <div class="section-head games-heading">
+          <h3><span id="gamesTitle" data-i18n="gamesTitle">Games</span> <span class="count" id="gamesCount" role="status" aria-live="polite"></span></h3>
           <div class="row">
             <button class="ghost sm" id="addGame" data-i18n="addGame">Add a game</button>
             <button class="ghost sm" id="addFolder" data-i18n="addFolder">Add a folder</button>
             <button class="glass-btn sm" id="rescan" data-i18n="rescan">Rescan</button>
           </div>
         </div>
+        <div class="game-filters" role="search" aria-labelledby="gamesTitle">
+          <label class="game-search"><span data-i18n="searchGames">Search games</span>
+            <input id="gameSearch" type="search" autocomplete="off" spellcheck="false" aria-controls="groups">
+          </label>
+          <label><span data-i18n="fApi">Rendering API</span><select id="gameApi" aria-controls="groups"></select></label>
+          <label><span data-i18n="filterDlss">DLSS status</span><select id="gameDlss" aria-controls="groups"></select></label>
+          <label><span data-i18n="filterAddon">Add-on</span><select id="gameAddon" aria-controls="groups"></select></label>
+          <button class="ghost sm" id="clearGameFilters" data-i18n="clearFilters">Clear filters</button>
+        </div>
+        <div class="game-quick-filters" id="gameQuickFilters"></div>
         <div id="groups"></div>
       </section>
 
@@ -117,7 +130,11 @@
       </section>
 
       <section class="view" id="view-history">
-        <div class="section-head"><h3 data-i18n="navHistory">History</h3></div>
+        <div class="section-head">
+          <h3 data-i18n="navHistory">History</h3>
+          <button class="ghost sm" id="copyHistory" data-i18n="copyHistory" disabled>Copy history</button>
+        </div>
+        <p class="hint hidden" id="historyWarning" role="status"></p>
         <div class="glass" id="history"></div>
       </section>
 
@@ -161,9 +178,13 @@
   <div class="overlay hidden" id="overlay">
     <div class="sheet" id="sheet"></div>
   </div>
+  <div id="copyFeedback" class="copy-feedback hidden" role="status" aria-live="polite"></div>
 
   <script src="i18n.js"></script>
   <script src="i18n-extra.js"></script>
+  <script src="../shared/feature-i18n.js"></script>
+  <script src="game-filters.js"></script>
+  <script src="../shared/install-routes.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

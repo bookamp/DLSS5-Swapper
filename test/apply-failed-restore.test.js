@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { writePe } = require('./fixtures/pe');
 
 test('failed ReShade setup leaves an active manifest that restores partial files', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dlss5-failed-setup-'));
@@ -23,7 +24,7 @@ test('failed ReShade setup leaves an active manifest that restores partial files
   const names = ['nvngx_dlss.dll', 'nvngx_dlssnr.dll', 'nvngx_dlssg.dll'];
   const payload = names.map((name) => {
     const file = path.join(payloadDir, name);
-    fs.writeFileSync(file, name);
+    writePe(file, { text: name });
     return { name, path: file, version: '310.8.0.0' };
   });
   const addon = path.join(payloadDir, 'renodx-dlss5.addon64');
@@ -42,6 +43,7 @@ test('failed ReShade setup leaves an active manifest that restores partial files
     filename: scanPath,
     loaded: true,
     exports: {
+      inspectReShade: () => ({ installed: false }),
       scanGame: async () => ({
         dlssFiles: [], streamlineFiles: [],
         reshade: { installed: false, file: null, kind: null, version: null, addonSupport: false }

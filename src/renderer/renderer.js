@@ -4,7 +4,9 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const { t, setLang, getLang, dirOf, LANGS } = window.i18n;
-const state = { games: [], recents: [], newDlss: null, log: [], theme: 'light', lang: 'en', logo: {} };
+const state = { games: [], recents: [], history: [], newDlss: null, log: [], theme: 'light', lang: 'en', logo: {}, groupGamesByStore: true };
+const filters = { query: '', api: 'all', dlss: 'all', addon: 'all' };
+const gameFilters = window.gameFilters;
 
 const ORDER = ['Steam', 'Epic Games', 'GOG', 'Added by hand', 'My folders'];
 const rank = (l) => (ORDER.indexOf(l) === -1 ? ORDER.length : ORDER.indexOf(l));
@@ -34,10 +36,23 @@ function log(message) {
 }
 
 function renderLog() {
+  $('copyLog').disabled = state.log.length === 0;
   $('log').innerHTML = state.log.length
     ? state.log.slice(-40).map((e) => `<div class="log-row"><i></i><span class="t">[${e.t}]</span><span class="m">${esc(e.m)}</span></div>`).join('')
     : `<p class="empty">${t('logEmpty')}</p>`;
   $('log').scrollTop = $('log').scrollHeight;
+}
+
+let copyFeedbackTimer;
+async function copyText(text) {
+  let ok = false;
+  try { ok = Boolean(text.trim()) && await window.lab.copyText(text); } catch { /* Show an actionable error. */ }
+  const feedback = $('copyFeedback');
+  clearTimeout(copyFeedbackTimer);
+  feedback.textContent = t(ok ? 'copied' : 'copyFailed');
+  feedback.classList.remove('hidden');
+  copyFeedbackTimer = setTimeout(() => feedback.classList.add('hidden'), ok ? 2200 : 6000);
+  return ok;
 }
 
 function setStatus(text, percent) {
@@ -76,10 +91,7 @@ function ago(ts) {
 // A game counts as done when the add-on is in place and its DLSS matches the
 // payload; that is what the pip reports.
 function isReady(g) {
-  const s = g && g.cached;
-  return Boolean(s && s.addon && (
-    s.bitness === 32 || (s.dlss && state.newDlss && s.dlss === state.newDlss)
-  ));
+  return gameFilters.isInstalled(g, state.newDlss);
 }
 
 function renderRecent() {
@@ -94,7 +106,7 @@ function renderRecent() {
   }
 
   $('recents').innerHTML = rows.map(({ at, game }) => `
-    <article class="rcard" data-dir="${esc(game.dir)}">
+    <article class="rcard" data-dir="${esc(game.dir)}" tabindex="0" aria-label="${esc(game.name)}" aria-haspopup="menu">
       ${game.poster ? `<img src="${game.poster.url}" alt="">` : `<div class="initials">${esc(initials(game.name))}</div>`}
       <div class="meta">
         <div class="title">${esc(game.name)}</div>
@@ -121,9 +133,10 @@ function cardMarkup(g) {
   const s = g.cached;
   const api = s ? (s.api || reasonText(s.reason) || '—') : t('scanning');
   const dx12 = Boolean(s && s.dx12);
+  const hasDlss = gameFilters.hasDlss(g);
   const status = s && s.ok
-    ? `<span class="dot-s ${s.dlss ? 'on' : ''}"></span>${s.dlss ? short(s.dlss) : t('noDlss')}
-       <span class="dot-s ${s.addon ? 'on' : ''}" style="margin-inline-start:8px"></span>${t('addonShort')}`
+    ? `<span class="dot-s ${hasDlss ? 'on' : ''}"></span>${s.dlss ? esc(short(s.dlss)) : t(hasDlss ? 'hasDlss' : 'noDlss')}
+       <span class="dot-s ${s.addon || s.optiscaler ? 'on' : ''}" style="margin-inline-start:8px"></span>${s.optiscaler ? 'OptiScaler' : t('addonShort')}`
     : '';
   const strip = status ? `<div class="status">${status}</div>` : '';
   const poster = g.poster
@@ -132,11 +145,11 @@ function cardMarkup(g) {
     : `<div class="poster"><div class="placeholder">${initials(g.name)}</div>${strip}</div>`;
 
   return `
-    <article class="card${dx12 ? ' dx12' : ''}${s && !s.ok ? ' unsupported' : ''}" data-dir="${esc(g.dir)}">
+    <article class="card${dx12 ? ' dx12' : ''}${s && !s.ok ? ' unsupported' : ''}" data-dir="${esc(g.dir)}" tabindex="0" aria-label="${esc(g.name)}" aria-haspopup="menu">
       <div class="tools">
-        <button class="tool" data-act="poster" title="Poster">🖼</button>
-        <button class="tool" data-act="open" title="Open">📂</button>
-        <button class="tool" data-act="hide" title="Hide">✕</button>
+        <button class="tool" data-act="poster" title="${esc(t('menuPoster'))}">🖼</button>
+        <button class="tool" data-act="open" title="${esc(t('menuOpen'))}">📂</button>
+        <button class="tool" data-act="hide" title="${esc(t('menuHide'))}">✕</button>
       </div>
       <span class="badge${dx12 ? ' dx12' : ''}">${esc(api)}</span>
       ${poster}
@@ -144,39 +157,166 @@ function cardMarkup(g) {
     </article>`;
 }
 
-function renderGames() {
-  const groups = {};
-  for (const g of state.games) (groups[g.launcher] ||= []).push(g);
+function fillFilter(id, options, selected) {
+  const element = $(id);
+  // Don't reset native dropdowns on every scan/art update or keystroke.
+  const markup = options.map(([value, label]) => `<option value="${esc(value)}">${esc(label)}</option>`).join('');
+  if (element._optionsMarkup !== markup) {
+    element.innerHTML = markup;
+    element._optionsMarkup = markup;
+  }
+  element.value = selected;
+}
 
-  $('groups').innerHTML = Object.entries(groups)
-    .sort((a, b) => rank(a[0]) - rank(b[0]))
+function renderGameFilters() {
+  $('gameSearch').placeholder = t('searchGamesHint');
+  const apis = [
+    ['all', t('allApis')], ['dx11-dx12', 'DirectX 11 / 12'],
+    ...['DirectX 12', 'DirectX 11', 'DirectX 10', 'DirectX 9', 'DirectX 8', 'Vulkan', 'OpenGL'].map((api) => [api, api]),
+    ['no-graphics-exe', t('rNoGraphics')], ['no-exe', t('rNoExe')],
+    ['pending', t('scanning')]
+  ];
+  for (const game of state.games) {
+    const api = gameFilters.apiKey(game);
+    if (!apis.some(([value]) => value === api)) apis.push([api, reasonText(game.cached?.reason) || game.cached?.api || t('unknownApi')]);
+  }
+  if (!apis.some(([value]) => value === filters.api)) apis.push([filters.api, reasonText(filters.api)]);
+  fillFilter('gameApi', apis, filters.api);
+
+  const versions = gameFilters.versions(state.games);
+  if (filters.dlss.startsWith('version:') && !versions.includes(filters.dlss.slice(8))) versions.push(filters.dlss.slice(8));
+  fillFilter('gameDlss', [
+    ['all', t('allDlss')], ['ready', t('filterReady')],
+    ['present', t('hasDlss')], ['absent', t('noDlss')],
+    ['installed', t('dlssCurrent')], ...versions.map((v) => ['version:' + v, 'DLSS ' + v])
+  ], filters.dlss);
+  fillFilter('gameAddon', [
+    ['all', t('allAddons')], ['present', t('addonPresent')], ['absent', t('addonAbsent')]
+  ], filters.addon);
+  $('clearGameFilters').disabled = !filters.query && ['api', 'dlss', 'addon'].every((key) => filters[key] === 'all');
+  const quick = [
+    ['api', 'DirectX 12', t('dx12Count', state.games.filter((g) => gameFilters.apiKey(g) === 'DirectX 12').length)],
+    ['dlss', 'ready', t('readyFor', state.games.filter(gameFilters.canInstall).length)],
+    ['dlss', 'present', t('dlssCount', state.games.filter(gameFilters.hasDlss).length)]
+  ];
+  const chips = $('gameQuickFilters');
+  if (!chips.children.length) {
+    chips.innerHTML = quick.map(() => '<button type="button" class="filter-chip"></button>').join('');
+  }
+  quick.forEach(([key, value, label], index) => {
+    const chip = chips.children[index];
+    chip.dataset.filter = key;
+    chip.dataset.value = value;
+    chip.textContent = label;
+    chip.setAttribute('aria-pressed', String(filters[key] === value));
+  });
+}
+
+function renderGames() {
+  const focusedGroup = document.activeElement?.dataset.readyFilter;
+  renderGameFilters();
+  const visible = state.games.filter((g) => gameFilters.matches(g, filters, state.newDlss));
+  let sections;
+  if (state.groupGamesByStore) {
+    const groups = new Map();
+    for (const game of visible) {
+      if (!groups.has(game.launcher)) groups.set(game.launcher, []);
+      groups.get(game.launcher).push(game);
+    }
+    sections = [...groups].sort((a, b) => rank(a[0]) - rank(b[0]));
+  } else {
+    // Sort only the filtered copy. Keep each game's source and the stored
+    // library intact so switching categories back on restores its sections.
+    const byName = new Intl.Collator(state.lang, { numeric: true, sensitivity: 'base' });
+    visible.sort((a, b) => byName.compare(a.name, b.name));
+    sections = visible.length ? [[null, visible]] : [];
+  }
+
+  $('groups').innerHTML = sections
     .map(([launcher, list]) => {
-      const ready = list.filter((g) => g.cached && g.cached.dx12).length;
+      if (launcher === null) return `<div class="grid">${list.map(cardMarkup).join('')}</div>`;
+      const ready = list.filter(gameFilters.canInstall).length;
       return `<section class="group">
         <div class="group-head"><h4>${esc(launcher)}</h4><span class="count">${list.length}</span>
-        <span class="ready">${t('readyFor', ready)}</span></div>
+        <button type="button" class="ready filter-chip" data-ready-filter="${esc(launcher)}" aria-pressed="${filters.dlss === 'ready'}">${t('readyFor', ready)}</button></div>
         <div class="grid">${list.map(cardMarkup).join('')}</div>
       </section>`;
-    }).join('');
+    }).join('') || `<div class="glass games-empty"><h4>${t('noMatchingGames')}</h4><p>${t('changeFilters')}</p></div>`;
 
-  const scanned = state.games.filter((g) => g.cached).length;
-  const dx12 = state.games.filter((g) => g.cached && g.cached.dx12).length;
-  $('gamesCount').textContent = t('found', state.games.length, dx12);
-  setStatus(scanned < state.games.length ? t('scanning') : t('ready'), (scanned / Math.max(state.games.length, 1)) * 100);
+  $('gamesCount').textContent = t('filteredCount', visible.length, state.games.length);
+  if (focusedGroup !== undefined) {
+    [...$('groups').querySelectorAll('[data-ready-filter]')]
+      .find((button) => button.dataset.readyFilter === focusedGroup)?.focus({ preventScroll: true });
+  }
 }
+
+$('gameSearch').oninput = (event) => { filters.query = event.target.value; renderGames(); };
+for (const [id, key] of [['gameApi', 'api'], ['gameDlss', 'dlss'], ['gameAddon', 'addon']]) {
+  $(id).onchange = (event) => { filters[key] = event.target.value; renderGames(); };
+}
+$('clearGameFilters').onclick = () => {
+  Object.assign(filters, { query: '', api: 'all', dlss: 'all', addon: 'all' });
+  $('gameSearch').value = '';
+  renderGames();
+  $('gameSearch').focus();
+};
+$('gameQuickFilters').onclick = (event) => {
+  const button = event.target.closest('[data-filter]');
+  if (!button) return;
+  const { filter, value } = button.dataset;
+  filters[filter] = filters[filter] === value ? 'all' : value;
+  renderGames();
+};
 
 // ---------------- history / settings ----------------
 
+let historyRenderId = 0;
 async function renderHistory() {
-  const rows = await window.lab.history();
+  const requestId = ++historyRenderId;
+  $('copyHistory').disabled = true;
+  $('historyWarning').classList.add('hidden');
+  let result;
+  try {
+    result = await window.lab.history();
+    if (!Array.isArray(result?.rows)) throw new Error('Invalid history response');
+  }
+  catch {
+    if (requestId !== historyRenderId) return;
+    state.history = [];
+    $('history').innerHTML = `<p class="pad">${esc(t('historyLoadFailed'))}</p>`;
+    return;
+  }
+  if (requestId !== historyRenderId) return;
+  const rows = state.history = result.rows;
+  $('historyWarning').classList.toggle('hidden', !result.warning);
+  $('historyWarning').textContent = result.warning ? t('historySaveWarning') : '';
+  $('copyHistory').disabled = rows.length === 0;
   $('history').innerHTML = rows.length
     ? rows.map((r) => `<div class="hist-row">
-        <div class="n">${esc(r.name)}${r.undone ? ` <span class="undone">${t('restored')}</span>` : ''}
-          <div class="d">${esc(r.dir)}</div></div>
-        <div class="c">${t('replacedAdded', r.replaced, r.added)}</div>
-        <div class="d">${new Date(r.date).toLocaleString('en-GB')}</div>
+        <div class="n"><bdi>${esc(r.name)}</bdi> <span class="undone">${esc(historyAction(r))}</span>
+          <div class="d" dir="auto">${esc(r.dir)}</div>
+          ${r.exe ? `<div class="d" dir="auto">${esc(r.exe)}</div>` : ''}
+          ${r.route || r.api ? `<div class="d">${esc([historyRoute(r), r.api].filter(Boolean).join(' · '))}</div>` : ''}
+        </div>
+        <div class="c">${esc(t('replacedAdded', r.replaced, r.added))}</div>
+        <div class="d">${esc(new Date(r.date).toLocaleString(state.lang))}</div>
       </div>`).join('')
     : `<div class="pad" style="color:var(--dim);font-size:13.5px">${t('histEmpty')}</div>`;
+}
+
+const historyRoute = row => ({ native: 'ReShade / RenoDX', feeder: 'ReShade / DLSS5-Feeder', optiscaler: 'OptiScaler DLSS-NR' }[row.route] || row.route || '');
+function historyAction(row) {
+  if (row.action === 'restore') return t('restored');
+  if (row.action === 'recovery') return t('historyRecovered');
+  return t(row.imported ? 'historySnapshot' : 'installed');
+}
+function historyText() {
+  return state.history.map(row => [
+    `[${row.date}] ${historyAction(row)} — ${row.name}`,
+    row.dir, row.exe,
+    [historyRoute(row), row.api].filter(Boolean).join(' · '),
+    t('replacedAdded', row.replaced, row.added)
+  ].filter(Boolean).join('\n')).join('\n\n');
 }
 
 // ---------------- add-on builds ----------------
@@ -269,6 +409,12 @@ $('dlgSave').onclick = async () => {
 async function renderSettings() {
   const info = await window.lab.settings();
   $('settings').innerHTML = `
+    <div class="set-row"><div><div class="k">${t('setGroupGames')}</div>
+      <div class="v" id="setGroupGamesHint">${t('setGroupGamesHint')}</div></div>
+      <button class="setting-switch" id="setGroupGames" type="button" role="switch"
+        aria-checked="${info.groupGamesByStore !== false}" aria-label="${t('setGroupGames')}" aria-describedby="setGroupGamesHint">
+        <span class="knob"></span>
+      </button></div>
     <div class="set-row"><div><div class="k">${t('setAutoScan')}</div>
       <div class="v">${t('setAutoScanHint')}</div></div>
       <button class="setting-switch" id="setAutoScan" type="button" role="switch"
@@ -298,6 +444,20 @@ async function renderSettings() {
       <button class="ghost sm" id="setReset">${t('setReset')}</button></div>
     <div class="set-row"><div><div class="k">${t('setPosters')}</div><div class="v">${esc(info.posterDir)}</div></div>
       <span class="d">${t('setSaved', info.posterCount)}</span></div>`;
+  $('setGroupGames').onclick = async () => {
+    const toggle = $('setGroupGames');
+    const enabled = toggle.getAttribute('aria-checked') !== 'true';
+    toggle.disabled = true;
+    try {
+      state.groupGamesByStore = await window.lab.setGroupGamesByStore(enabled);
+      toggle.setAttribute('aria-checked', String(state.groupGamesByStore));
+      renderGames(); // Presentation only: no discovery, rescan or filter reset.
+    } catch (error) {
+      log(error.message);
+    } finally {
+      toggle.disabled = false;
+    }
+  };
   $('setAutoScan').onclick = async () => {
     const toggle = $('setAutoScan');
     const enabled = toggle.getAttribute('aria-checked') !== 'true';
@@ -333,8 +493,10 @@ async function renderSettings() {
 
 async function scanAll() {
   const pending = state.games.filter((g) => !g.cached);
+  let scanned = state.games.length - pending.length;
   for (const game of pending) {
     game.cached = await window.lab.scan(game.dir);
+    setStatus(t('scanning'), (++scanned / state.games.length) * 100);
     renderGames();
     renderRecent();
   }
@@ -400,6 +562,7 @@ async function pickGame(dir) {
 let sheetGame = null;
 let sheetDetails = null;
 let jobLines = [];
+let jobRunning = false;
 // Which executable the sheet is pointed at, kept per folder so re-rendering
 // the sheet - a language switch does that - does not silently reset the choice.
 const exeChoice = new Map();
@@ -464,11 +627,7 @@ function selectedApi(pick, dir) {
 }
 
 function routesFor(pick, api) {
-  if (!pick) return ['native'];
-  if (pick.bitness === 32 || pick.emulator) return ['feeder'];
-  if (api === 'dxgi') return ['native', 'feeder'];
-  if (api === 'd3d9') return ['native'];
-  return ['feeder'];
+  return window.installRoutes.routesFor(pick, api);
 }
 
 function selectedRoute(d, pick, dir, api = selectedApi(pick, dir).api) {
@@ -479,33 +638,60 @@ function selectedRoute(d, pick, dir, api = selectedApi(pick, dir).api) {
   return routes[0];
 }
 
+function installLabel(d, pick, dir) {
+  const route = pick && selectedRoute(d, pick, dir);
+  if (d.installedRoute && route !== d.installedRoute) return t('applyBackend');
+  return route === 'optiscaler' ? t('installOpti') : t('install');
+}
+
 function installOptions(d, pick, dir) {
-  if (!pick) return '';
+  const warning = (d.antiCheatWarning || pick?.antiCheatWarning)
+    ? `<div class="emu-note anti-cheat-warning" role="alert"><b>${t('antiCheatWarningTitle')}</b><span>${t('antiCheatWarning')}</span></div>` : '';
+  if (!pick) return warning;
   const api = selectedApi(pick, dir);
   const route = selectedRoute(d, pick, dir, api.api);
   const apis = pick.apiChoices || [{ api: pick.api, label: pick.apiLabel }];
   const routes = routesFor(pick, api.api);
+  const opti = route === 'optiscaler';
+  const optiReason = window.installRoutes.optiReason(pick, api.api);
+  if (!routes.length) return `<div class="emu-note">${t('unsupportedRendererHint')}</div>${warning}`;
   return `
     <div class="install-options">
       ${apis.length > 1 ? `<label><span>${t('fApi')}</span><select id="apiChoice">${apis.map((item) =>
         `<option value="${esc(item.api)}"${item.api === api.api ? ' selected' : ''}>${esc(item.label)}</option>`).join('')}</select></label>` : ''}
-      <label><span>${t('fRoute')}</span><select id="routeChoice">${routes.map((item) =>
+      <label><span>${t('fBackend')}</span><select id="backendChoice" aria-describedby="backendHint">
+        <option value="reshade"${opti ? '' : ' selected'}>${t('backendReShade')}</option>
+        <option value="optiscaler"${opti ? ' selected' : ''}${optiReason ? ' disabled' : ''}>OptiScaler DLSS-NR</option>
+      </select></label>
+      ${!opti ? `<label><span>${t('fRoute')}</span><select id="routeChoice">${routes.filter(item => item !== 'optiscaler').map((item) =>
         `<option value="${item}"${item === route ? ' selected' : ''}>${t(item === 'feeder' ? 'routeFeeder' : 'routeNative')}</option>`).join('')}</select></label>
+      ` : ''}
     </div>
-    ${pick.emulator ? `<div class="emu-note"><b>${esc(pick.emulator.name)} · ${esc(pick.emulator.system)}</b><span>${esc(pick.emulator.hint)}</span><span>${t('emulatorDepthHint')}</span></div>` : ''}`;
+    <div class="emu-note backend-note" id="backendHint"><span>${t(opti ? 'optiHint' : 'backendHint')}</span>
+      ${optiReason ? `<span>${t(optiReason)}</span>` : ''}
+      ${route === 'native' ? `<span>${t('nativeEffectsHint')}</span>` : ''}
+      ${opti && (api.api === 'vulkan' || api.label === 'DirectX 11') ? `<span>${t('optiBridgeHint')}</span>` : ''}
+      ${api.api === 'vulkan' ? `<span>${t('optiVulkanHint')}</span>` : ''}
+    </div>
+    ${pick.installIssue ? `<div class="emu-note compatibility-warning" role="alert">${t(pick.installIssue)}</div>` : ''}
+    ${warning}
+    ${['d3d8', 'd3d9'].includes(api.api) ? `<div class="emu-note">${t('legacyRendererHint')}</div>` : ''}
+    ${pick.emulator ? `<div class="emu-note"><b>${esc(pick.emulator.name)} · ${esc(pick.emulator.system)}</b><span>${esc(pick.emulator.hint)}</span><span>${t('emulatorDepthHint')}</span>${pick.emulator.key === 'xenia' ? `<span>${t('xeniaUiHint')}</span>` : ''}</div>` : ''}`;
 }
 
 function jobLog(line) {
   jobLines.push(line);
   const box = document.querySelector('.job');
   if (box) { box.textContent = jobLines.join('\n'); box.scrollTop = box.scrollHeight; }
+  if ($('copyJob')) $('copyJob').disabled = jobLines.length === 0;
 }
 
-async function openSheet(dir) {
+async function openSheet(dir, keepLog = false) {
+  if (jobRunning) return;
   const g = state.games.find((x) => x.dir === dir);
   if (!g) return;
   sheetGame = g;
-  jobLines = [];
+  if (!keepLog) jobLines = [];
 
   $('overlay').classList.remove('hidden');
   $('sheet').innerHTML = '<div class="pad" style="color:var(--dim)">Reading the folder…</div>';
@@ -558,7 +744,9 @@ async function openSheet(dir) {
         ${showExeFact && pick ? spec(t('fExe'), esc(pick.rel.split(/[\/]/).pop()), null, pick.rel) : ''}
         ${pick ? spec(t('fArchitecture'), `${pick.bitness || '?'}-bit`) : ''}
         ${spec(t('fApi'), esc((pick && selectedApi(pick, dir).label) || reasonText(d.reason) || '—'), pick && selectedApi(pick, dir).api === 'dxgi' ? 'on' : 'off')}
-        ${spec('DLSS', dlssValue(inGameDlss, d.newDlss, upToDate))}
+        ${spec(t('installedBackend'), esc(d.installedRoute === 'optiscaler' ? 'OptiScaler DLSS-NR' : d.installedRoute ? 'ReShade' : t('none')), d.installedRoute ? 'on' : 'off')}
+        ${spec('DLSS', pick && selectedRoute(d, pick, dir) === 'optiscaler' ? esc(inGameDlss || t('none')) : dlssValue(inGameDlss, d.newDlss, upToDate))}
+        ${d.optiscaler ? spec('OptiScaler', esc(d.optiscaler.installed ? d.optiscaler.version : t('notInstalled')), d.optiscaler.installed ? 'on' : 'off') : ''}
         ${spec(t('fAddon'), esc(d.addon ? t('installed') : t('notPresent')), d.addon ? 'on' : 'off')}
         ${spec(t('fReShade'), esc(d.reshade.installed
             ? d.reshade.version + (d.reshade.addonSupport ? ' + ' + t('addonShort') : '')
@@ -569,18 +757,27 @@ async function openSheet(dir) {
         `<div class="filerow"><span class="f">${esc(f.rel)}</span><span class="v">${esc(f.version || '—')}</span></div>`).join('')}</div>` : ''}
 
       <div class="sheet-actions">
-        <button class="btn-install" id="doInstall"${d.ok ? '' : ' disabled'}>${t('install')}</button>
+        <button class="btn-install" id="doInstall"${d.ok && pick && !pick.installIssue && routesFor(pick, selectedApi(pick, dir).api).length ? '' : ' disabled'}>${installLabel(d, pick, dir)}</button>
         <button class="btn-restore" id="doRestore"${d.hasBackup ? '' : ' disabled'}>${t('restore')}</button>
       </div>
-      <div class="job" id="job">${jobLines.join('\n') || t('jobReady')}</div>
+      <div class="job-toolbar"><button class="ghost sm" id="copyJob"${jobLines.length ? '' : ' disabled'}>${t('copyLog')}</button></div>
+      <div class="job" id="job" role="status" aria-live="polite">${esc(jobLines.join('\n') || t('jobReady'))}</div>
     </div>`;
 
   $('sheetClose').onclick = closeSheet;
+  $('copyJob').onclick = () => copyText([sheetGame.name, sheetGame.dir, '', ...jobLines].join('\n'));
   wireExePicker(dir);
   const apiSelect = $('apiChoice');
   if (apiSelect) apiSelect.onchange = () => { apiChoice.set(dir, apiSelect.value); openSheet(dir); };
   const routeSelect = $('routeChoice');
-  if (routeSelect) routeSelect.onchange = () => routeChoice.set(dir, routeSelect.value);
+  if (routeSelect) routeSelect.onchange = () => { routeChoice.set(dir, routeSelect.value); openSheet(dir, true); };
+  const backendSelect = $('backendChoice');
+  if (backendSelect) backendSelect.onchange = () => {
+    const available = routesFor(pick, selectedApi(pick, dir).api).filter(route => route !== 'optiscaler');
+    const previous = available.includes(d.previousReShadeRoute) ? d.previousReShadeRoute : d.recommendedRoute;
+    routeChoice.set(dir, backendSelect.value === 'optiscaler' ? 'optiscaler' : available.includes(previous) ? previous : available[0]);
+    openSheet(dir, true);
+  };
   $('doInstall').onclick = () => runJob('install', dir);
   $('doRestore').onclick = () => runJob('restore', dir);
 }
@@ -608,15 +805,19 @@ function wireExePicker(dir) {
 }
 
 async function runJob(kind, dir) {
+  if (jobRunning) return;
+  jobRunning = true;
   const install = $('doInstall');
   const restoreBtn = $('doRestore');
   install.disabled = restoreBtn.disabled = true;
+  document.querySelectorAll('#sheet select, #exeSelect, #sheetClose').forEach(e => { e.disabled = true; });
   install.textContent = kind === 'install' ? t('installing') : t('install');
   jobLines = [];
   jobLog(kind === 'install' ? '--- installing ---' : '--- restoring ---');
 
   const pick = sheetDetails ? chosenExe(sheetDetails, dir) : null;
-  const res = kind === 'install'
+  let res;
+  try { res = kind === 'install'
     ? await window.lab.install(
       dir,
       exeChoice.get(dir) || null,
@@ -624,27 +825,34 @@ async function runJob(kind, dir) {
       pick ? selectedApi(pick, dir).api : null
     )
     : await window.lab.restoreGame(dir);
+  } catch (error) { res = { ok: false, message: error.message }; }
+  jobRunning = false;
   install.textContent = t('install');
 
   if (res.ok) {
     jobLog(kind === 'install' ? `done - ${res.replaced} replaced, ${res.added} added` : 'done - originals restored');
     log(`${kind === 'install' ? 'Installed' : 'Restored'}: ${dir}`);
+    if ($('view-history').classList.contains('active')) await renderHistory();
     // Recent Games tracks what was actually swapped, not what was browsed.
     state.recents = await window.lab.touch(dir);
     renderRecent();
     const g = state.games.find((x) => x.dir === dir);
     if (g) { g.cached = await window.lab.scan(dir); renderGames(); renderRecent(); }
-    setTimeout(() => openSheet(dir), 400);
+    if (kind === 'restore') routeChoice.delete(dir);
+    setTimeout(() => { if (sheetGame?.dir === dir) openSheet(dir, true); }, 400);
   } else {
-    jobLog('failed: ' + (res.message || res.code));
+    const translated = res.code && t(res.code);
+    jobLog(res.cancelled ? t('operationCancelled') : 'failed: ' + (translated && translated !== res.code ? translated : (res.message || res.code)));
+    if (!res.cancelled && res.message && translated && translated !== res.code && res.message !== res.code) jobLog(res.message);
     install.disabled = false;
     // A failed external ReShade setup can still have changed files. Re-read
     // the manifest so Restore originals becomes available immediately.
-    setTimeout(() => openSheet(dir), 250);
+    setTimeout(() => { if (sheetGame?.dir === dir) openSheet(dir, true); }, 250);
   }
 }
 
 function closeSheet() {
+  if (jobRunning) return;
   sheetGame = null;
   sheetDetails = null;
   $('overlay').classList.add('hidden');
@@ -685,7 +893,7 @@ function applyLang(code) {
   if (view && view.id === 'view-history') renderHistory();
   if (view && view.id === 'view-settings') renderSettings();
   if (view && view.id === 'view-addons') renderAddons();
-  if (sheetGame) openSheet(sheetGame.dir);
+  if (sheetGame) openSheet(sheetGame.dir, true);
 }
 
 // With this many languages a plain list is a long scroll, so the menu filters
@@ -772,35 +980,119 @@ $('rescan').onclick = async () => {
   await load();
 };
 $('clearLog').onclick = () => { state.log = []; renderLog(); };
+$('copyLog').onclick = () => copyText(state.log.map(e => `[${e.t}] ${e.m}`).join('\n'));
+$('copyHistory').onclick = () => copyText(historyText());
+
+const cardActionsBusy = new Set();
+let contextMenuOpen = false;
+
+async function performGameAction(action, dir) {
+  if (!['details', 'open', 'copy', 'restore', 'scan', 'poster', 'hide'].includes(action)) return;
+  const game = state.games.find(g => g.dir === dir);
+  if (!game) return;
+  if (!['open', 'copy'].includes(action) && (jobRunning || cardActionsBusy.size)) return;
+  if (action === 'copy') return copyText(dir);
+  const locksCard = action !== 'open';
+  if (locksCard) cardActionsBusy.add(dir);
+  try {
+    if (action === 'details') {
+      await openSheet(dir);
+    } else if (action === 'open') {
+      const error = await window.lab.open(dir);
+      if (error) throw new Error(error);
+    } else if (action === 'restore') {
+      // The native menu already requested confirmation. Re-read the actual
+      // backup before reusing the existing guarded restore/history/log flow.
+      await openSheet(dir);
+      if (jobRunning || sheetGame !== game) return;
+      if (!sheetDetails?.hasBackup) throw new Error(t('menuNoBackup'));
+      await runJob('restore', dir);
+    } else if (action === 'scan') {
+      const scan = await window.lab.scan(dir);
+      if (state.games.includes(game)) game.cached = scan;
+      renderGames();
+      renderRecent();
+      log(t('menuScanned', game.name));
+    } else if (action === 'poster') {
+      const url = await window.lab.setPoster(dir);
+      if (url && state.games.includes(game)) {
+        game.poster = { url, tall: true, custom: true };
+        renderGames();
+        renderRecent();
+      }
+    } else if (action === 'hide') {
+      await window.lab.hide(dir);
+      state.games = state.games.filter(g => g.dir !== dir);
+      renderGames();
+      renderRecent();
+    }
+  } catch (error) {
+    log(t('menuActionFailed', game.name, error.message));
+  } finally {
+    if (locksCard) cardActionsBusy.delete(dir);
+  }
+}
+
+async function openGameMenu(card, position) {
+  if (contextMenuOpen) return;
+  const dir = card.dataset.dir;
+  if (!state.games.some(game => game.dir === dir)) return;
+  contextMenuOpen = true;
+  const labels = {
+    details: t('menuDetails'), open: t('menuOpen'), copy: t('menuCopyPath'),
+    scan: t('menuScan'), poster: t('menuPoster'), restore: t('restore'), hide: t('menuHide'),
+    cancel: t('cancel'), confirmRestore: t('menuConfirmRestore'), restoreHint: t('menuRestoreHint')
+  };
+  try {
+    const action = await window.lab.gameMenu(dir, { labels, position, busy: jobRunning || cardActionsBusy.size > 0 });
+    if (action) await performGameAction(action, dir);
+  } catch (error) {
+    log(t('menuActionFailed', card.getAttribute('aria-label'), error.message));
+  } finally {
+    contextMenuOpen = false;
+    // Avoid stealing focus from the game sheet or a confirmation dialog.
+    if ($('overlay').classList.contains('hidden') && card.isConnected) card.focus({ preventScroll: true });
+  }
+}
+
+for (const container of [$('groups'), $('recents')]) {
+  container.oncontextmenu = event => {
+    const card = event.target.closest('.card, .rcard');
+    if (!card) return;
+    event.preventDefault();
+    return openGameMenu(card, { x: event.clientX, y: event.clientY });
+  };
+  container.addEventListener('keydown', event => {
+    const card = event.target.closest('.card, .rcard');
+    if (!card || event.target.closest('button')) return;
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault();
+      const rect = card.getBoundingClientRect();
+      openGameMenu(card, { x: rect.left + Math.min(24, rect.width / 2), y: rect.top + Math.min(24, rect.height / 2), keyboard: true });
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      performGameAction('details', card.dataset.dir);
+    }
+  });
+}
 
 $('groups').onclick = async (event) => {
+  if (event.target.closest('[data-ready-filter]')) {
+    filters.dlss = filters.dlss === 'ready' ? 'all' : 'ready';
+    renderGames();
+    return;
+  }
   const card = event.target.closest('.card');
   if (!card) return;
   const dir = card.dataset.dir;
   const act = event.target.closest('.tool')?.dataset.act;
 
-  if (act === 'poster') {
-    const url = await window.lab.setPoster(dir);
-    if (url) {
-      const g = state.games.find((x) => x.dir === dir);
-      g.poster = { url, tall: true, custom: true };
-      renderGames();
-      renderRecent();
-    }
-  } else if (act === 'open') {
-    window.lab.open(dir);
-  } else if (act === 'hide') {
-    await window.lab.hide(dir);
-    state.games = state.games.filter((g) => g.dir !== dir);
-    renderGames();
-  } else {
-    openSheet(dir);
-  }
+  await performGameAction(act || 'details', dir);
 };
 
 $('recents').onclick = (e) => {
   const card = e.target.closest('.rcard');
-  if (card) openSheet(card.dataset.dir);
+  if (card) return performGameAction('details', card.dataset.dir);
 };
 
 $('overlay').onclick = (e) => { if (e.target === $('overlay')) closeSheet(); };
@@ -809,7 +1101,7 @@ document.addEventListener('keydown', (e) => {
   if (!$('dlgOverlay').classList.contains('hidden')) closeDialog();
   else closeSheet();
 });
-window.lab.onJob((e) => jobLog(`${e.code} ${JSON.stringify(e.params)}`));
+window.lab.onJob((e) => jobLog(`${e.code === 'historySaveWarning' ? t(e.code) : e.code} ${JSON.stringify(e.params)}`));
 
 const zone = $('dropZone');
 ['dragenter', 'dragover'].forEach((n) => zone.addEventListener(n, (e) => { e.preventDefault(); zone.classList.add('over'); }));
@@ -826,6 +1118,7 @@ document.addEventListener('drop', (e) => e.preventDefault());
 (async () => {
   const boot = await window.lab.boot();
   state.theme = boot.theme || 'light';
+  state.groupGamesByStore = boot.groupGamesByStore !== false;
   document.documentElement.dataset.theme = state.theme;
   applyLang(boot.lang || 'en');
   $('statusVersion').textContent = `v${boot.version}`;
