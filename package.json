@@ -5,10 +5,11 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test --test-isolation=none --test-concurrency=1 test/*.test.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
     "payload": "node scripts/collect-payload.js",
     "prebuild": "npm run payload",
     "build": "electron-builder --win",
+    "build:linux": "electron-builder --linux AppImage deb",
     "icon": "electron scripts/make-icon.js",
     "build:portable": "electron-builder --win portable"
   },
@@ -54,6 +55,13 @@
         "portable"
       ],
       "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Game",
+      "maintainer": "Rakan Alkhaldi",
+      "icon": "app_iocn.png",
+      "artifactName": "DLSS5-Swapper-${version}-${arch}.${ext}"
     },
     "compression": "maximum",
     "portable": {
