@@ -385,6 +385,25 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 /* The label side has to take the free space, or the paths inside it stay
    text-width and their buttons trail each one at a different offset. */
 .set-row > div:first-child { flex: 1; min-width: 0; }
+.setting-switch {
+  flex: none; position: relative; width: 48px; height: 27px; padding: 0;
+  border-radius: 999px; cursor: pointer; background: var(--glass);
+  border: 1px solid var(--stroke);
+  transition: background .18s ease, border-color .18s ease, opacity .18s ease;
+}
+.setting-switch .knob {
+  position: absolute; top: 50%; inset-inline-start: 3px;
+  width: 19px; height: 19px; border-radius: 50%;
+  background: var(--dim); transform: translateY(-50%);
+  transition: inset-inline-start .18s cubic-bezier(.2, .8, .3, 1), background .18s ease;
+}
+.setting-switch[aria-checked="true"] { background: var(--accent-soft); border-color: rgba(108, 193, 10, .5); }
+.setting-switch[aria-checked="true"] .knob {
+  inset-inline-start: 24px; background: var(--accent);
+  box-shadow: 0 0 10px rgba(108, 193, 10, .5);
+}
+.setting-switch:hover { border-color: var(--dim); }
+.setting-switch:disabled { cursor: wait; opacity: .6; }
 .about p { font-size: 13.5px; line-height: 1.9; }
 .about .dim { color: var(--dim); }
 
@@ -693,6 +712,22 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .exe-option .tick { width: 11px; flex: none; font-size: 11px; }
 .exe-option .exe-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .exe-option .exe-meta { display: flex; gap: 9px; flex: none; font-size: 10.5px; color: var(--dim); }
+
+.install-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.install-options label { display: grid; gap: 6px; font-size: 10.5px; color: var(--dim); }
+.install-options select {
+  width: 100%; padding: 11px 12px; border-radius: 11px;
+  border: 1px solid var(--stroke); background: var(--panel-2); color: var(--text);
+  font: inherit; font-size: 13px; font-weight: 650; outline: none;
+}
+.install-options select:focus { border-color: var(--accent); }
+.emu-note {
+  display: grid; gap: 4px; margin-top: 10px; padding: 11px 13px;
+  border: 1px solid rgba(108, 193, 10, .28); border-radius: 11px;
+  background: var(--accent-soft); color: var(--dim); font-size: 11.5px; line-height: 1.45;
+}
+.emu-note b { color: var(--text); font-size: 12.5px; }
+@media (max-width: 620px) { .install-options { grid-template-columns: 1fr; } }
 
 /* ---------------- dark theme: depth ----------------
    The light theme separates surfaces with a grey border on white. On black a

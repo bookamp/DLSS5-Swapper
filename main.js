@@ -14,24 +14,12 @@ const art = require('./src/steamart');
 const { applySwap, restore, backupRoot } = require('./src/core/apply.js');
 const { scanSource } = require('./src/core/scan.js');
 const pe = require('./src/core/pe.js');
+const { ensureLumenite } = require('./src/core/runtime-components.js');
 
 // ---------- add-on builds ----------
-// New RenoDX builds keep arriving. Whether a build joins the shipped one or
-// takes its place is decided by its file name, because that is what ReShade
-// loads by:
-//
-//   renodx-dlss5.addon64  (shipped)  - the DLSS swap itself
-//   renodx-dlss5.addon64  (v4.55)    - same name, so it lands on top
-//   renodx-dlss.addon64   (ShortFuse) - different name, so it loads as well
-//
-// ShortFuse's build does not carry the DLSS half, which is why no game ran
-// with it on its own. The shipped add-on is therefore always installed, and at
-// most one other build rides along with it.
-// Two places hold add-on builds. The bundled ones ship inside the package, so
-// the Add-ons screen has something in it on a fresh machine. The other is a
-// folder beside the executable, where anyone can drop a new build without
-// going through the dialog - installed that is next to the .exe, since
-// main.js itself lives inside the asar.
+// The integrated RenoDX build is always installed and is not presented as an
+// optional add-on. Other bundled or user-added builds still appear in the
+// Add-ons screen, and an `addons` folder beside the executable remains valid.
 function addonFolders() {
   if (!app.isPackaged) return [path.join(__dirname, 'addons')];
   return [
@@ -49,12 +37,6 @@ const KNOWN = {
   // The build that used to ship. Recognised if someone adds it by hand, but
   // it is no longer the one bundled.
   '189efdee6a327833': { name: 'Stable (previous)' },
-  '76e8a0c90a6b99a7': {
-    name: 'DX12 · DX11 · DX9',
-    notes: ['DX12 support', 'DX11 support', 'DX9 support', 'New HDR scaling', 'Reflowed UI'],
-    // The author's own caveat, quoted like the notes above it.
-    warn: 'Might be buggy'
-  },
   // v4.6 carries the same version resource as the v4.55 it replaces, so only
   // the hash tells them apart - which is why builds are keyed by content here.
   // The flickering warning that rode with v4.55 is gone: this build fixes it.
@@ -70,6 +52,10 @@ function describe(file, label) {
   try { buf = fs.readFileSync(file); } catch { return null; }
   const version = pe.getFileVersion(file);
   const id = crypto.createHash('sha1').update(buf).digest('hex').slice(0, 16);
+  // This former bundled companion duplicates capabilities now provided by the
+  // integrated RenoDX and Feeder routes and can conflict when loaded beside
+  // them. Hide stale copies left behind by an older installation too.
+  if (id === '76e8a0c90a6b99a7') return null;
   const known = KNOWN[id] || {};
   return {
     ...known,
@@ -175,6 +161,9 @@ let win = null;
 const stateFile = () => path.join(app.getPath('userData'), 'library.json');
 const posterDir = () => path.join(app.getPath('userData'), 'posters');
 const keyFor = (dir) => crypto.createHash('sha1').update(path.resolve(dir).toLowerCase()).digest('hex').slice(0, 16);
+// Bump when executable or API detection changes so an old wrong result is not
+// kept forever merely because the folder was scanned by an earlier release.
+const SCAN_RULES = 2;
 
 function loadState() {
   try {
@@ -311,8 +300,17 @@ ipcMain.handle('settings', () => {
   return {
     folders: state.folders, stateFile: stateFile(), posterDir: posterDir(), posterCount,
     roots: lastRoots,
-    excludedRoots: state.excludedRoots || []
+    excludedRoots: state.excludedRoots || [],
+    autoScanDrives: state.autoScanDrives === true
   };
+});
+
+ipcMain.handle('set-auto-scan-drives', (_event, enabled) => {
+  const state = loadState();
+  state.autoScanDrives = enabled === true;
+  if (!state.autoScanDrives) lastRoots = [];
+  saveState(state);
+  return state.autoScanDrives;
 });
 
 // Used when a folder arrives by drop rather than through the picker.
@@ -331,7 +329,11 @@ let lastRoots = [];
 
 ipcMain.handle('library', () => {
   const state = loadState();
-  const found = discover(state.folders, true, state.excludedRoots || []);
+  const found = discover(
+    state.folders,
+    state.autoScanDrives === true,
+    state.excludedRoots || []
+  );
   lastRoots = found.roots;
   const games = found.games.concat(
     state.manual
@@ -351,7 +353,9 @@ ipcMain.handle('library', () => {
       dir: g.dir,
       poster: posterUrl(g, state),
       // Whatever the last scan found, so cards can render before rescanning.
-      cached: state.scans[keyFor(g.dir)] || null
+      cached: state.scans[keyFor(g.dir)] && state.scans[keyFor(g.dir)].rules === SCAN_RULES
+        ? state.scans[keyFor(g.dir)]
+        : null
     }));
 });
 
@@ -373,7 +377,8 @@ ipcMain.handle('scan', async (_event, dir) => {
       dlss: dlss ? dlss.version : null,
       addon: Boolean(scan.addonPresent),
       reshade: scan.reshade.installed ? scan.reshade.version : null,
-      scannedAt: Date.now()
+      scannedAt: Date.now(),
+      rules: SCAN_RULES
     };
     state.scans[key] = result;
     saveState(state);
@@ -527,7 +532,7 @@ ipcMain.handle('recents', () => {
 function enabledAddons() {
   const state = loadState();
   const list = state.addons || (state.addon ? [state.addon] : []);
-  return list.filter((f) => fs.existsSync(f));
+  return list.filter((f) => fs.existsSync(f) && describe(f, null));
 }
 
 // The one that takes the base's place, if any: same file name means the same
@@ -706,9 +711,20 @@ ipcMain.handle('details', async (_event, dir) => {
     apiKey: scan.chosen ? scan.chosen.api : null,
     bitness: scan.chosen ? scan.chosen.bitness : null,
     via: scan.chosen ? scan.chosen.via : null,
+    emulator: scan.emulator,
+    installedRoute: scan.install && scan.install.route,
+    installedApi: scan.install && scan.install.api,
+    installedExe: scan.install && scan.install.exe,
+    recommendedRoute: (scan.emulator || !scan.primaryDlss) ? 'feeder' : 'native',
     exes: scan.exeCandidates.map((e) => ({
       rel: e.rel, path: e.path, apiLabel: e.apiLabel, api: e.api,
-      bitness: e.bitness, size: e.size, via: e.via
+      bitness: e.bitness, size: e.size, via: e.via,
+      emulator: e.emulator,
+      apiChoices: e.apiChoices || [{ api: e.api, label: e.apiLabel }],
+      routes: e.bitness === 32 || e.emulator
+        ? ['feeder']
+        : (e.api === 'd3d9' ? ['native']
+          : (e.api === 'dxgi' ? ['native', 'feeder'] : ['feeder']))
     })),
     files,
     currentDlss: scan.primaryDlss ? {
@@ -723,7 +739,7 @@ ipcMain.handle('details', async (_event, dir) => {
   };
 });
 
-ipcMain.handle('install', async (event, dir, exePath) => {
+ipcMain.handle('install', async (event, dir, exePath, requestedRoute, requestedApi) => {
   const p = payload();
   if (!p) return { ok: false, message: 'No payload found - run "npm run payload" in app/' };
   const scan = await scanGame(dir);
@@ -732,20 +748,58 @@ ipcMain.handle('install', async (event, dir, exePath) => {
   // Honour the sheet's choice, but only if it is one of the candidates we
   // actually found - never patch a path the renderer made up.
   const target = scan.exeCandidates.find((e) => e.path === exePath) || scan.chosen;
+  const apiChoices = target.apiChoices || [{ api: target.api, label: target.apiLabel }];
+  const api = apiChoices.some((item) => item.api === requestedApi) ? requestedApi : target.api;
+  const availableRoutes = target.bitness === 32 || target.emulator
+    ? ['feeder']
+    : (api === 'd3d9' ? ['native']
+      : (api === 'dxgi' ? ['native', 'feeder'] : ['feeder']));
+  const recommendedRoute = (target.emulator || !scan.primaryDlss) ? 'feeder' : 'native';
+  const route = availableRoutes.includes(requestedRoute) ? requestedRoute
+    : (availableRoutes.includes(recommendedRoute) ? recommendedRoute : availableRoutes[0]);
 
   const send = (e) => event.sender.send('job', e);
 
-  // The builds do not share a file name - the shipped one is
-  // renodx-dlss5.addon64, ShortFuse's is renodx-dlss.addon64 - so installing a
-  // second one would sit beside the first and ReShade would load the same
-  // add-on twice. Park the old one instead of deleting it: .disabled is the
-  // convention already used for parked builds here, and it is reversible.
+  // Switching between the native and synthetic Feeder contracts must be a
+  // clean uninstall/install. Leaving both add-ons active makes ReShade load
+  // two NGX owners and commonly exits before the first frame.
+  const activeManifest = path.join(backupRoot(dir), 'manifest.json');
+  if (fs.existsSync(activeManifest)) {
+    try {
+      const old = JSON.parse(fs.readFileSync(activeManifest, 'utf8'));
+      const oldRoute = old.route || (old.game && old.game.bitness === 32 ? 'feeder' : 'native');
+      if (oldRoute !== route) {
+        await restore(dir, send);
+        send({ code: 'routeSwitched', params: { from: oldRoute, to: route } });
+      }
+    } catch (err) {
+      return { ok: false, code: err.code, message: err.message };
+    }
+  }
+
+  if (route === 'feeder') {
+    try {
+      p.source.feeder.lumeniteRoot = await ensureLumenite(app.getPath('userData'));
+      send({ code: 'motionProviderReady', params: { provider: 'LumeniteFX Kernel 2.0' } });
+    } catch (err) {
+      // VORT is bundled under MIT as an offline fallback. The install remains
+      // usable even when GitHub is unavailable.
+      p.source.feeder.lumeniteRoot = null;
+      send({ code: 'motionProviderFallback', params: { error: err.message } });
+    }
+  }
+
+  // An optional custom build with a different file name would sit beside the
+  // integrated one. Park unrelated old builds instead of deleting them:
+  // .disabled is ReShade's reversible convention for inactive add-ons.
   // 32-bit games use the fixed v4.55 add-on inside the 64-bit helper. A loose
   // 64-bit companion beside the 32-bit game cannot load and newer builds may
   // conflict with the feeder contract.
-  const companions = target.bitness === 32 ? [] : companionAddons();
+  const companions = route === 'native' && target.bitness === 64 ? companionAddons() : [];
   const exeDir = path.dirname(target.path);
-  const keep = new Set([path.basename(p.source.addon).toLowerCase()]);
+  const keep = new Set(route === 'feeder'
+    ? ['dlss5-feed.addon64', 'dlss5-feed.addon32', 'renodx-dlss5.addon64']
+    : [path.basename(p.source.addon).toLowerCase()]);
   for (const c of companions) keep.add(path.basename(c).toLowerCase());
   for (const f of fs.readdirSync(exeDir)) {
     if (!/\.addon(64)?$/i.test(f) || keep.has(f.toLowerCase())) continue;
@@ -761,10 +815,13 @@ ipcMain.handle('install', async (event, dir, exePath) => {
     const manifest = await applySwap({
       gameDir: dir,
       exePath: target.path,
-      api: target.api,
+      api,
       bitness: target.bitness,
+      route,
+      emulator: target.emulator,
       source: p.source,
       reshadeSetup: p.reshadeSetup,
+      vulkanLayerTarget: path.join(app.getPath('userData'), 'reshade-vulkan'),
       installReShade: true,
       addMissingDlss: true,
       addStreamline: false,

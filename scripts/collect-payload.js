@@ -7,6 +7,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const extractZip = require('extract-zip');
+const { execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const PAYLOAD = path.join(ROOT, 'payload');
@@ -17,6 +18,7 @@ const CACHE = path.join(ROOT, 'vendor', 'component-cache');
 const COMPONENTS = {
   host: ['dlss5-feed-host64.exe', 'https://github.com/jlrouzies-fr/DLSS5-Feeder/releases/download/v0.7.0/dlss5-feed-host64.exe', 'b8944065e087536fa137b0450488017a4b58ad00e2acb6ee67912395adec8233'],
   addon32: ['dlss5-feed.addon32', 'https://github.com/jlrouzies-fr/DLSS5-Feeder/releases/download/v0.7.0/dlss5-feed.addon32', '7d55a608650acb2dbf0a4f4bf782ab45ff8eec4700a8ebf4676b441697b3d8ab'],
+  addon64: ['dlss5-feed.addon64', 'https://github.com/jlrouzies-fr/DLSS5-Feeder/releases/download/v0.7.0/dlss5-feed.addon64', 'e6861abef41bc90934352a967017dd019bce6d746d35910b67c7dd20f061c0e2'],
   shader: ['DLSS5_Feed.fx', 'https://github.com/jlrouzies-fr/DLSS5-Feeder/releases/download/v0.7.0/DLSS5_Feed.fx', 'cbc997a1d0b9b0e00b8c4e912a09bc4b1aef968ad36269502cbe386499264222'],
   feederLicense: ['DLSS5-Feeder-LICENSE.txt', 'https://raw.githubusercontent.com/jlrouzies-fr/DLSS5-Feeder/v0.7.0/LICENSE', '6562d5a5e3d7534711e34f4b34335f23f067acc839ae5274c1250bf5f4654b8b'],
   dgVoodoo: ['dgVoodoo2_87_3.zip', 'https://github.com/dege-diosg/dgVoodoo2/releases/download/v2.87.3/dgVoodoo2_87_3.zip', '6fb954bed55bf70e948c5045a663a9df31ea206faf105e327bafe46c318f867f'],
@@ -136,11 +138,12 @@ function findHostAddon(sourceDir) {
   return null;
 }
 
-async function collect32Bit(source) {
-  console.log('\n32-bit support (DLSS5-Feeder v0.7.0):');
+async function collectFeeder(source) {
+  console.log('\nDLSS5-Feeder v0.7.0 (32/64-bit, DirectX/OpenGL/Vulkan):');
   const feeder = path.join(PAYLOAD, 'feeder');
   copyFile(await pinned(COMPONENTS.host), path.join(feeder, COMPONENTS.host[0]));
   copyFile(await pinned(COMPONENTS.addon32), path.join(feeder, COMPONENTS.addon32[0]));
+  copyFile(await pinned(COMPONENTS.addon64), path.join(feeder, COMPONENTS.addon64[0]));
   copyFile(await pinned(COMPONENTS.shader), path.join(feeder, 'reshade-shaders', 'Shaders', COMPONENTS.shader[0]));
   copyFile(await pinned(COMPONENTS.reshadeHeader), path.join(feeder, 'reshade-shaders', 'Shaders', COMPONENTS.reshadeHeader[0]));
   copyFile(await pinned(COMPONENTS.reshadeUiHeader), path.join(feeder, 'reshade-shaders', 'Shaders', COMPONENTS.reshadeUiHeader[0]));
@@ -210,13 +213,13 @@ if (!addon) {
 }
 copyFile(addon, path.join(PAYLOAD, path.basename(addon)));
 
-// The extra RenoDX builds ride along too, so the Add-ons screen has something
-// in it on a machine that has never seen this project. Each folder beside the
-// project that holds a .addon64 contributes its build; the base one in payload/
-// is the app's own and is not repeated here.
+// Preserve support for bundled optional builds, but never bring back the old
+// DX12/DX11/DX9 companion that duplicates the integrated routes.
 const EXTRAS = path.join(ROOT, 'addons');
 fs.rmSync(EXTRAS, { recursive: true, force: true });
+fs.mkdirSync(EXTRAS, { recursive: true });
 const base = path.basename(addon).toLowerCase();
+const deprecated = new Set(['76e8a0c90a6b99a7']);
 let extras = 0;
 for (const dir of [path.resolve(ROOT, '..'), ...DEFAULT_SOURCES]) {
   let entries = [];
@@ -228,8 +231,10 @@ for (const dir of [path.resolve(ROOT, '..'), ...DEFAULT_SOURCES]) {
     try { files = fs.readdirSync(sub).filter((f) => /\.addon(64)?$/i.test(f)); } catch { continue; }
     for (const f of files) {
       const from = path.join(sub, f);
-      // Same bytes as the shipped base means it is the base, not an extra.
-      if (fs.readFileSync(from).equals(fs.readFileSync(addon))) continue;
+      const bytes = fs.readFileSync(from);
+      const id = crypto.createHash('sha1').update(bytes).digest('hex').slice(0, 16);
+      if (deprecated.has(id)) continue;
+      if (bytes.equals(fs.readFileSync(addon))) continue;
       const dest = path.join(EXTRAS, f);
       if (fs.existsSync(dest)) continue;
       copyFile(from, dest);
@@ -266,7 +271,7 @@ async function extracted(component, folder) {
   if (!fs.existsSync(dest)) await extractZip(zip, { dir: dest });
   return dest;
 }
-console.log(`  (${extras} extra add-on build${extras === 1 ? '' : 's'} bundled)`);
+console.log(`  (${extras} optional add-on build${extras === 1 ? '' : 's'} bundled)`);
 
 const reshade = findReShadeSetup();
 if (!reshade) {
@@ -277,7 +282,22 @@ if (!reshade) {
   process.exit(1);
 }
 copyFile(reshade.file, path.join(PAYLOAD, reshade.name));
-await collect32Bit(source);
+
+// ReShade reaches Vulkan through an implicit layer, not a proxy beside the
+// game. Its setup executable is a valid self-extracting ZIP, so keep the layer
+// payload ready for a per-user HKCU registration at install time.
+const reshadeExtract = path.join(CACHE, `reshade-${reshade.version.join('.') || 'current'}`);
+if (!fs.existsSync(path.join(reshadeExtract, 'ReShade64.dll'))) {
+  fs.mkdirSync(reshadeExtract, { recursive: true });
+  // ReShade Setup is a self-extracting executable with a ZIP appended. BSD
+  // tar handles that layout; extract-zip rejects its non-standard comment.
+  execFileSync('tar', ['-xf', reshade.file, '-C', reshadeExtract], { stdio: 'inherit' });
+}
+for (const name of ['ReShade64.dll', 'ReShade64.json', 'ReShade32.dll', 'ReShade32.json']) {
+  copyFile(path.join(reshadeExtract, name), path.join(PAYLOAD, 'reshade-vulkan', name));
+}
+
+await collectFeeder(source);
 
 const total = fs
   .readdirSync(PAYLOAD, { recursive: true })

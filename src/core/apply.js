@@ -11,6 +11,7 @@ const { spawn } = require('child_process');
 const pe = require('./pe');
 const { scanGame } = require('./scan');
 const feederConfig = require('./feeder-config');
+const vulkanLayer = require('./vulkan-layer');
 
 const BACKUP_DIR = '_DLSS5_Backup';
 const MANIFEST = 'manifest.json';
@@ -52,6 +53,24 @@ function beginManifest(gameDir, exePath, api) {
       ...((previous && previous.reshade) || {})
     }
   };
+}
+
+async function saveActiveManifest(gameDir, manifest) {
+  await fs.promises.mkdir(backupRoot(gameDir), { recursive: true });
+  await fs.promises.writeFile(
+    path.join(backupRoot(gameDir), MANIFEST), JSON.stringify(manifest, null, 2), 'utf8'
+  );
+}
+
+function captureReShadeAttempt(manifest, exeDir, known, hook, hookExisted) {
+  manifest.reshade.filesAdded = [...new Set([
+    ...(manifest.reshade.filesAdded || []),
+    ...newReShadeFiles(exeDir, known)
+  ])];
+  if (!hookExisted && fs.existsSync(path.join(exeDir, hook))) {
+    manifest.reshade.installedByUs = true;
+    manifest.reshade.file = hook;
+  }
 }
 
 function wasAdded(manifest, rel) {
@@ -314,6 +333,7 @@ async function installReShadeAt(options) {
   if (!reshadeSetup || !fs.existsSync(reshadeSetup)) throw fail('errReShadeSetupMissing');
 
   const hookExisted = fs.existsSync(hookPath);
+  const known = listDir(exeDir);
   await backupReShadeConfig(gameDir, exeDir, manifest);
   await trackBeforeWrite(manifest, gameDir, hookPath, { kind: 'reshade' });
   const ini = path.join(exeDir, 'ReShade.ini');
@@ -322,30 +342,58 @@ async function installReShadeAt(options) {
   if (!fs.existsSync(defaultPreset)) await trackBeforeWrite(manifest, gameDir, defaultPreset, { kind: 'config' });
 
   const runner = setupRunner || runSetup;
-  const result = await runner(reshadeSetup, [exePath, '--api', api, '--headless'], log);
+  // Keep a recoverable checkpoint before launching an external installer. If
+  // it exits half-way through, Restore originals must still be available.
+  await saveActiveManifest(gameDir, manifest);
+  let result;
+  try {
+    result = await runner(reshadeSetup, [exePath, '--api', api, '--headless'], log);
+  } catch (error) {
+    captureReShadeAttempt(manifest, exeDir, known, hook, hookExisted);
+    await saveActiveManifest(gameDir, manifest);
+    throw error;
+  }
   if (!fs.existsSync(hookPath) || !isAddonReShade(hookPath)) {
+    captureReShadeAttempt(manifest, exeDir, known, hook, hookExisted);
+    await saveActiveManifest(gameDir, manifest);
     throw fail('errReShadeInstall', { exit: result && result.code, output: result && result.output });
   }
   if (gameInstance) {
     manifest.reshade.installedByUs = !hookExisted;
     manifest.reshade.file = hook;
   }
+  captureReShadeAttempt(manifest, exeDir, known, hook, hookExisted);
+  await saveActiveManifest(gameDir, manifest);
   log('reshadeInstalled', { version: pe.getFileVersion(hookPath), file: hook });
   return hookPath;
 }
 
-async function apply32Bit(config, log) {
+async function applyFeeder(config, log) {
   const {
-    gameDir, exePath, api, source, reshadeSetup, setupRunner
+    gameDir, exePath, api, source, reshadeSetup, setupRunner,
+    bitness: requestedBitness, vulkanLayerTarget, registryRunner, emulator
   } = config;
+  const bitness = requestedBitness || pe.getBitness(exePath);
   const exeDir = path.dirname(exePath);
   if (!canWrite(exeDir)) throw fail('errNoWriteAccess');
   if (!source.hasNeuralRendering) throw fail('errNoNeuralRuntime');
-  if (!source.feeder || !source.feeder.ok) throw fail('err32BitSupportMissing');
-  if (!['dxgi', 'd3d9', 'opengl'].includes(api)) throw fail('err32BitApiUnsupported', { api });
+  const feederReady = source.feeder && (bitness === 32
+    ? (source.feeder.ok32 ?? source.feeder.ok)
+    : (source.feeder.ok64 ?? source.feeder.ok));
+  if (!feederReady) {
+    throw fail('errFeederSupportMissing');
+  }
+  if (!['dxgi', 'd3d9', 'opengl', 'vulkan'].includes(api) || (bitness === 64 && api === 'd3d9')) {
+    throw fail('errFeederApiUnsupported', { api, bitness });
+  }
+  if (api === 'vulkan' && (!source.feeder.vulkanOk || !vulkanLayerTarget)) {
+    throw fail('errVulkanSupportMissing');
+  }
 
   const manifest = beginManifest(gameDir, exePath, api);
-  manifest.game.bitness = 32;
+  manifest.route = 'feeder';
+  manifest.game.bitness = bitness;
+  manifest.game.emulator = emulator || null;
   const payloadByName = new Map(source.payload.map((file) => [file.name.toLowerCase(), file]));
   const neural = payloadByName.get('nvngx_dlssnr.dll');
   const dlss = payloadByName.get('nvngx_dlss.dll');
@@ -372,22 +420,52 @@ async function apply32Bit(config, log) {
     reshadeApi = 'dxgi';
   }
 
-  await installReShadeAt({
-    gameDir, exePath, api: reshadeApi, manifest, reshadeSetup, setupRunner, log, gameInstance: true
-  });
+  if (api === 'vulkan') {
+    manifest.vulkanLayer = await vulkanLayer.register({
+      sourceDir: source.feeder.vulkanLayerDir,
+      targetDir: vulkanLayerTarget,
+      gameDir,
+      bitness,
+      runner: registryRunner
+    });
+    log('vulkanLayerInstalled', { global: true, manifest: manifest.vulkanLayer.manifest });
+  } else {
+    await installReShadeAt({
+      gameDir, exePath, api: reshadeApi, manifest, reshadeSetup, setupRunner, log, gameInstance: true
+    });
+  }
 
   const addonRel = await copyTracked(
-    manifest, gameDir, source.feeder.addon32,
-    path.join(exeDir, 'dlss5-feed.addon32'), { kind: 'feeder' }
+    manifest, gameDir, bitness === 32 ? source.feeder.addon32 : source.feeder.addon64,
+    path.join(exeDir, bitness === 32 ? 'dlss5-feed.addon32' : 'dlss5-feed.addon64'), { kind: 'feeder' }
   );
   log('addonInstalled', { name: path.basename(addonRel) });
   await copyTreeTracked(
     manifest, gameDir, source.feeder.shaderRoot,
     path.join(exeDir, 'reshade-shaders'), log
   );
+  const provider = source.feeder.lumeniteRoot ? 3 : 2;
+  if (source.feeder.lumeniteRoot) {
+    await copyTreeTracked(
+      manifest, gameDir, path.join(source.feeder.lumeniteRoot, 'Shaders'),
+      path.join(exeDir, 'reshade-shaders', 'Shaders'), log
+    );
+    await copyTreeTracked(
+      manifest, gameDir, path.join(source.feeder.lumeniteRoot, 'Textures'),
+      path.join(exeDir, 'reshade-shaders', 'Textures'), log
+    );
+    for (const name of ['LICENSE.md', 'NOTICE']) {
+      const src = path.join(source.feeder.lumeniteRoot, name);
+      if (fs.existsSync(src)) await copyTracked(
+        manifest, gameDir, src,
+        path.join(exeDir, 'reshade-shaders', 'Licenses', `LumeniteFX-${name}`), { kind: 'license' }
+      );
+    }
+  }
+  manifest.feeder = { version: '0.7.0', provider };
   const installedShaders = [
     path.join(exeDir, 'reshade-shaders', 'Shaders', 'DLSS5_Feed.fx'),
-    path.join(exeDir, 'reshade-shaders', 'Shaders', 'vort_Motion.fx'),
+    path.join(exeDir, 'reshade-shaders', 'Shaders', provider === 3 ? 'lumenite_Kernel.fx' : 'vort_Motion.fx'),
     path.join(exeDir, 'reshade-shaders', 'Shaders', 'ReShade.fxh'),
     path.join(exeDir, 'reshade-shaders', 'Shaders', 'ReShadeUI.fxh'),
     path.join(exeDir, 'reshade-shaders', 'Shaders', 'Includes', 'vort_Defs.fxh'),
@@ -396,7 +474,7 @@ async function apply32Bit(config, log) {
   if (!installedShaders.every((file) => fs.existsSync(file))) throw fail('errShaderInstall');
 
   const gameIniPath = path.join(exeDir, 'ReShade.ini');
-  let gameIni = feederConfig.configureGameReShade(feederConfig.readText(gameIniPath));
+  let gameIni = feederConfig.configureGameReShade(feederConfig.readText(gameIniPath), provider);
   let preset = feederConfig.presetPath(exeDir, gameIni);
   const presetRel = path.relative(gameDir, preset);
   if (presetRel.startsWith('..') || path.isAbsolute(presetRel)) {
@@ -408,7 +486,7 @@ async function apply32Bit(config, log) {
   await writeTracked(manifest, gameDir, gameIniPath, gameIni, { kind: 'config' });
   await writeTracked(
     manifest, gameDir, preset,
-    feederConfig.configurePreset(feederConfig.readText(preset)), { kind: 'config' }
+    feederConfig.configurePreset(feederConfig.readText(preset), provider), { kind: 'config' }
   );
   const cfgPath = path.join(exeDir, 'dlss5-feed.cfg');
   await writeTracked(
@@ -416,28 +494,34 @@ async function apply32Bit(config, log) {
     feederConfig.configureFeed(feederConfig.readText(cfgPath)), { kind: 'config' }
   );
 
-  const hostDir = path.join(exeDir, 'host64');
-  const hostExe = path.join(hostDir, 'dlss5-feed-host64.exe');
-  const hostFiles = [
+  const hostDir = bitness === 32 ? path.join(exeDir, 'host64') : exeDir;
+  const hostExe = bitness === 32 ? path.join(hostDir, 'dlss5-feed-host64.exe') : null;
+  const hostFiles = bitness === 32 ? [
     [source.feeder.host64, hostExe, 'feeder'],
     [source.feeder.hostAddon, path.join(hostDir, 'renodx-dlss5.addon64'), 'addon'],
     [neural.path, path.join(hostDir, neural.name), 'runtime'],
     [dlss.path, path.join(hostDir, dlss.name), 'runtime']
+  ] : [
+    [source.feeder.hostAddon, path.join(exeDir, 'renodx-dlss5.addon64'), 'addon'],
+    [neural.path, path.join(exeDir, neural.name), 'runtime'],
+    [dlss.path, path.join(exeDir, dlss.name), 'runtime']
   ];
   for (const [src, dest, kind] of hostFiles) {
     const rel = await copyTracked(manifest, gameDir, src, dest, { kind, newVersion: pe.getFileVersion(src) });
     log(kind === 'addon' ? 'addonInstalled' : 'added', { rel, name: path.basename(dest), version: pe.getFileVersion(src) });
   }
-  await installReShadeAt({
-    gameDir, exePath: hostExe, api: 'dxgi', manifest, reshadeSetup, setupRunner, log, gameInstance: false
-  });
-  const hostIniPath = path.join(hostDir, 'ReShade.ini');
-  await writeTracked(
-    manifest, gameDir, hostIniPath,
-    feederConfig.configureHostReShade(feederConfig.readText(hostIniPath)), { kind: 'config' }
-  );
+  if (bitness === 32) {
+    await installReShadeAt({
+      gameDir, exePath: hostExe, api: 'dxgi', manifest, reshadeSetup, setupRunner, log, gameInstance: false
+    });
+    const hostIniPath = path.join(hostDir, 'ReShade.ini');
+    await writeTracked(
+      manifest, gameDir, hostIniPath,
+      feederConfig.configureHostReShade(feederConfig.readText(hostIniPath)), { kind: 'config' }
+    );
+  }
 
-  enableAddonInIni(exeDir, 'dlss5-feed.addon32', log);
+  enableAddonInIni(exeDir, bitness === 32 ? 'dlss5-feed.addon32' : 'dlss5-feed.addon64', log);
   enableAddonInIni(hostDir, 'renodx-dlss5.addon64', log);
   await fs.promises.mkdir(backupRoot(gameDir), { recursive: true });
   await fs.promises.writeFile(
@@ -464,7 +548,7 @@ function enableAddonInIni(exeDir, addonName, log) {
 async function applySwap(config, onLog) {
   const log = (code, params) => onLog && onLog({ code, params: params || {} });
   const bitness = config.bitness || pe.getBitness(config.exePath);
-  if (bitness === 32) return apply32Bit(config, log);
+  if (bitness === 32 || config.route === 'feeder') return applyFeeder(config, log);
   const {
     gameDir, exePath, api, source, reshadeSetup, setupRunner,
     installReShade, addMissingDlss, addStreamline, upgradeReShade
@@ -476,6 +560,7 @@ async function applySwap(config, onLog) {
 
   const scan = await scanGame(gameDir);
   const manifest = beginManifest(gameDir, exePath, api);
+  manifest.route = 'native';
   const setup = setupRunner || runSetup;
 
   const payloadByName = new Map(source.payload.map((f) => [f.name.toLowerCase(), f]));
@@ -598,8 +683,17 @@ async function applySwap(config, onLog) {
     await backupReShadeConfig(gameDir, exeDir, manifest);
     const known = listDir(exeDir);
     const hookPath = path.join(exeDir, hookForApi(api));
+    const hookExisted = fs.existsSync(hookPath);
     await trackBeforeWrite(manifest, gameDir, hookPath, { kind: 'reshade' });
-    const result = await setup(reshadeSetup, [exePath, '--api', api, '--headless'], log);
+    await saveActiveManifest(gameDir, manifest);
+    let result;
+    try {
+      result = await setup(reshadeSetup, [exePath, '--api', api, '--headless'], log);
+    } catch (error) {
+      captureReShadeAttempt(manifest, exeDir, known, path.basename(hookPath), hookExisted);
+      await saveActiveManifest(gameDir, manifest);
+      throw error;
+    }
     let after = (await scanGame(gameDir)).reshade;
 
     // An encrypted Xbox executable is still a valid install target, but the
@@ -613,15 +707,19 @@ async function applySwap(config, onLog) {
       if (fallback && fallback.ok) after = fallback.reshade;
     }
     if (after.installed && after.addonSupport) {
-      manifest.reshade.installedByUs = !before.installed;
+      manifest.reshade.installedByUs = !hookExisted;
       manifest.reshade.file = after.file;
       manifest.reshade.filesAdded = newReShadeFiles(exeDir, known);
       log('reshadeInstalled', { version: after.version, file: after.file });
     } else if (after.installed) {
       log('reshadeNoAddonSupport');
     } else {
+      captureReShadeAttempt(manifest, exeDir, known, path.basename(hookPath), hookExisted);
+      await saveActiveManifest(gameDir, manifest);
       throw fail('errReShadeInstall', { exit: result.code, output: result.output });
     }
+    captureReShadeAttempt(manifest, exeDir, known, path.basename(hookPath), hookExisted);
+    await saveActiveManifest(gameDir, manifest);
   } else if (before.installed) {
     log('reshadeAlreadyThere', {
       version: before.version,
@@ -634,12 +732,7 @@ async function applySwap(config, onLog) {
 
   if (source.addon) enableAddonInIni(exeDir, path.basename(source.addon), log);
 
-  await fs.promises.mkdir(backupRoot(gameDir), { recursive: true });
-  await fs.promises.writeFile(
-    path.join(backupRoot(gameDir), MANIFEST),
-    JSON.stringify(manifest, null, 2),
-    'utf8'
-  );
+  await saveActiveManifest(gameDir, manifest);
 
   log('applyDone');
   return manifest;
@@ -691,7 +784,12 @@ async function restore(gameDir, onLog) {
     } catch {}
   }
 
-  await fs.promises.rename(manifestPath, manifestPath + '.done');
+  if (manifest.vulkanLayer) {
+    const removed = await vulkanLayer.detach(manifest.vulkanLayer, gameDir);
+    log(removed ? 'vulkanLayerRemoved' : 'vulkanLayerKept');
+  }
+
+  await fs.promises.rename(manifestPath, manifestPath + `.done-${Date.now()}`);
   log('restoreDone');
   return true;
 }

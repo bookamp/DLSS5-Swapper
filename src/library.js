@@ -154,7 +154,7 @@ function drives() {
 // Folders that sit beside games in a library but are not games: launcher
 // plumbing and save data. Cheaper and safer than guessing from the contents -
 // steamapps does hold executables, three levels down.
-const NOT_A_GAME_DIR = /^(steamapps|gamesave|gamesaves|workshop|downloading|shadercache|temp|tmp|backup|saves?|savegames?|redist|_?commonredist|installers?|setup|dlc|mods?|tools?)$/i;
+const NOT_A_GAME_DIR = /^(steamapps|gamesave|gamesaves|workshop|downloading|shadercache|temp|tmp|backup|_dlss5_backup|reshade-shaders|saves?|savegames?|redist|_?commonredist|installers?|setup|dlc|mods?|tools?)$/i;
 
 // A game folder holds a runnable file somewhere near its top. Three levels
 // covers a repack that buries it - Golf.Gambit.v1.0.5-EA-OFME\Golf Gambit\ -
@@ -237,12 +237,15 @@ function filterExcluded(games, excludedRoots = []) {
   return games.filter((game) => !excluded.some((root) => isInside(game.dir, root)));
 }
 
-function discover(extraFolders = [], scanDrives = true, excludedRoots = []) {
+function discover(extraFolders = [], scanDrives = false, excludedRoots = [], findAutoRoots = autoRoots) {
   const found = [...steam(), ...epic(), ...gog()];
-  const roots = (scanDrives ? autoRoots() : [])
+  const roots = (scanDrives ? findAutoRoots() : [])
     .filter((root) => !excludedRoots.some((excluded) => isInside(root, excluded)));
   for (const dir of roots) found.push(...folder(dir, 'My folders', true));
-  for (const dir of extraFolders) found.push(...folder(dir));
+  // A user-picked scan root can still contain ReShade assets, backups and
+  // unrelated folders. Keep only children that actually contain a runnable
+  // game or emulator, just like automatically discovered library roots.
+  for (const dir of extraFolders) found.push(...folder(dir, 'My folders', true));
   return { games: dedupe(filterExcluded(found, excludedRoots)), roots };
 }
 

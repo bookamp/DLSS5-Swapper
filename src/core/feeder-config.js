@@ -57,14 +57,35 @@ function mergeNamedList(value, required, nameOf = (item) => item) {
   return [...required, ...kept].join(',');
 }
 
-function configureGameReShade(text) {
+// ReShade Setup 6.8 may seed recursive paths as `Shaders\**\**`. Windows
+// rejects the unresolved wildcard directory with ERROR_INVALID_NAME (123), so
+// the runtime sees no effects even though every .fx file is present. Always
+// put our canonical recursive path first and collapse/remove malformed copies,
+// while retaining unrelated custom search locations.
+function configureSearchPath(value, required) {
+  const canonical = (item) => String(item || '')
+    .trim()
+    .replace(/\//g, '\\')
+    .replace(/(?:\\\*\*){2,}$/g, '\\**');
+  const base = (item) => canonical(item).replace(/\\\*\*$/g, '').replace(/[\\]+$/g, '').toLowerCase();
+  const requiredBase = base(required);
+  const kept = String(value || '').split(',').map(canonical).filter(Boolean)
+    .filter((item) => base(item) !== requiredBase);
+  return [required, ...kept].join(',');
+}
+
+function configureGameReShade(text, provider = 2) {
   let out = String(text || '');
-  out = setIni(out, 'GENERAL', 'EffectSearchPaths', getIni(out, 'GENERAL', 'EffectSearchPaths') || '.\\reshade-shaders\\Shaders\\**');
-  out = setIni(out, 'GENERAL', 'TextureSearchPaths', getIni(out, 'GENERAL', 'TextureSearchPaths') || '.\\reshade-shaders\\Textures\\**');
+  out = setIni(out, 'GENERAL', 'EffectSearchPaths', configureSearchPath(
+    getIni(out, 'GENERAL', 'EffectSearchPaths'), '.\\reshade-shaders\\Shaders\\**'
+  ));
+  out = setIni(out, 'GENERAL', 'TextureSearchPaths', configureSearchPath(
+    getIni(out, 'GENERAL', 'TextureSearchPaths'), '.\\reshade-shaders\\Textures\\**'
+  ));
   out = setIni(out, 'GENERAL', 'PresetPath', getIni(out, 'GENERAL', 'PresetPath') || '.\\ReShadePreset.ini');
   const definitions = mergeNamedList(
     getIni(out, 'GENERAL', 'PreprocessorDefinitions'),
-    ['DLSS5_MV_PROVIDER=2'],
+    [`DLSS5_MV_PROVIDER=${provider}`],
     (item) => item.split('=')[0].trim()
   );
   out = setIni(out, 'GENERAL', 'PreprocessorDefinitions', definitions);
@@ -76,22 +97,30 @@ function configureHostReShade(text) {
   return setIni(String(text || ''), 'ADDON', 'AddonPath', '.\\');
 }
 
-function configurePreset(text) {
+function configurePreset(text, provider = 2) {
   let out = String(text || '');
-  const required = ['vort_MotionEffects@vort_Motion.fx', 'DLSS5_Feed@DLSS5_Feed.fx'];
+  const providerTechnique = provider === 3
+    ? 'Lumenite_Kernel@lumenite_Kernel.fx'
+    : 'vort_MotionEffects@vort_Motion.fx';
+  const required = [providerTechnique, 'DLSS5_Feed@DLSS5_Feed.fx'];
   const techniqueName = (item) => item.split('@')[0].trim();
+  const feederTechniques = new Set([
+    'Lumenite_Kernel', 'Lumenite_QuantMotion', 'vort_MotionEffects', 'DLSS5_Feed'
+  ].map((name) => name.toLowerCase()));
   for (const key of ['Techniques', 'TechniqueSorting']) {
     const current = (out.match(new RegExp(`^\\s*${key}\\s*=\\s*(.*)$`, 'mi')) || [])[1];
     // ReShade's preset keys live before any section. Handle that root area
     // directly, while preserving every unrelated setting and technique.
-    const next = mergeNamedList(current, required, techniqueName);
+    const kept = String(current || '').split(',').map((item) => item.trim()).filter(Boolean)
+      .filter((item) => !feederTechniques.has(techniqueName(item).toLowerCase()));
+    const next = [...required, ...kept].join(',');
     const rx = new RegExp(`^\\s*${key}\\s*=.*$`, 'mi');
     if (rx.test(out)) out = out.replace(rx, `${key}=${next}`);
     else out = `${key}=${next}\r\n${out}`;
   }
   const definitions = mergeNamedList(
     (out.match(/^\s*PreprocessorDefinitions\s*=\s*(.*)$/mi) || [])[1],
-    ['DLSS5_MV_PROVIDER=2'],
+    [`DLSS5_MV_PROVIDER=${provider}`],
     (item) => item.split('=')[0].trim()
   );
   if (/^\s*PreprocessorDefinitions\s*=/mi.test(out)) {
@@ -148,5 +177,6 @@ function readText(file) {
 
 module.exports = {
   getIni, setIni, configureGameReShade, configureHostReShade,
-  configurePreset, configureFeed, configureDgVoodoo, presetPath, readText
+  configurePreset, configureFeed, configureDgVoodoo, presetPath, readText,
+  configureSearchPath
 };

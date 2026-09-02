@@ -269,6 +269,12 @@ $('dlgSave').onclick = async () => {
 async function renderSettings() {
   const info = await window.lab.settings();
   $('settings').innerHTML = `
+    <div class="set-row"><div><div class="k">${t('setAutoScan')}</div>
+      <div class="v">${t('setAutoScanHint')}</div></div>
+      <button class="setting-switch" id="setAutoScan" type="button" role="switch"
+        aria-checked="${info.autoScanDrives ? 'true' : 'false'}" aria-label="${t('setAutoScan')}">
+        <span class="knob"></span>
+      </button></div>
     <div class="set-row"><div><div class="k">${t('setRoots')}</div>${
         (info.roots || []).length
           ? `<div class="paths">${info.roots.map((f) => `
@@ -292,6 +298,15 @@ async function renderSettings() {
       <button class="ghost sm" id="setReset">${t('setReset')}</button></div>
     <div class="set-row"><div><div class="k">${t('setPosters')}</div><div class="v">${esc(info.posterDir)}</div></div>
       <span class="d">${t('setSaved', info.posterCount)}</span></div>`;
+  $('setAutoScan').onclick = async () => {
+    const toggle = $('setAutoScan');
+    const enabled = toggle.getAttribute('aria-checked') !== 'true';
+    toggle.setAttribute('aria-checked', String(enabled));
+    toggle.disabled = true;
+    await window.lab.setAutoScanDrives(enabled);
+    await load();
+    await renderSettings();
+  };
   $('setAddFolder').onclick = async () => { if (await window.lab.addFolder()) load(); };
   for (const b of $('settings').querySelectorAll('[data-unroot]')) {
     b.onclick = async () => {
@@ -383,10 +398,13 @@ async function pickGame(dir) {
 // ---------------- game sheet ----------------
 
 let sheetGame = null;
+let sheetDetails = null;
 let jobLines = [];
 // Which executable the sheet is pointed at, kept per folder so re-rendering
 // the sheet - a language switch does that - does not silently reset the choice.
 const exeChoice = new Map();
+const routeChoice = new Map();
+const apiChoice = new Map();
 
 // One row per fact, in a single panel. A wrapping grid of bordered tiles left
 // an orphan on its own line whenever the count was odd, and repeated the same
@@ -439,6 +457,44 @@ function exePicker(d, dir) {
     </div>`;
 }
 
+function selectedApi(pick, dir) {
+  const choices = (pick && pick.apiChoices) || [];
+  const wanted = apiChoice.get(dir);
+  return choices.find((item) => item.api === wanted) || choices[0] || { api: pick.api, label: pick.apiLabel };
+}
+
+function routesFor(pick, api) {
+  if (!pick) return ['native'];
+  if (pick.bitness === 32 || pick.emulator) return ['feeder'];
+  if (api === 'dxgi') return ['native', 'feeder'];
+  if (api === 'd3d9') return ['native'];
+  return ['feeder'];
+}
+
+function selectedRoute(d, pick, dir, api = selectedApi(pick, dir).api) {
+  const routes = routesFor(pick, api);
+  const wanted = routeChoice.get(dir);
+  if (routes.includes(wanted)) return wanted;
+  if (routes.includes(d.recommendedRoute)) return d.recommendedRoute;
+  return routes[0];
+}
+
+function installOptions(d, pick, dir) {
+  if (!pick) return '';
+  const api = selectedApi(pick, dir);
+  const route = selectedRoute(d, pick, dir, api.api);
+  const apis = pick.apiChoices || [{ api: pick.api, label: pick.apiLabel }];
+  const routes = routesFor(pick, api.api);
+  return `
+    <div class="install-options">
+      ${apis.length > 1 ? `<label><span>${t('fApi')}</span><select id="apiChoice">${apis.map((item) =>
+        `<option value="${esc(item.api)}"${item.api === api.api ? ' selected' : ''}>${esc(item.label)}</option>`).join('')}</select></label>` : ''}
+      <label><span>${t('fRoute')}</span><select id="routeChoice">${routes.map((item) =>
+        `<option value="${item}"${item === route ? ' selected' : ''}>${t(item === 'feeder' ? 'routeFeeder' : 'routeNative')}</option>`).join('')}</select></label>
+    </div>
+    ${pick.emulator ? `<div class="emu-note"><b>${esc(pick.emulator.name)} · ${esc(pick.emulator.system)}</b><span>${esc(pick.emulator.hint)}</span><span>${t('emulatorDepthHint')}</span></div>` : ''}`;
+}
+
 function jobLog(line) {
   jobLines.push(line);
   const box = document.querySelector('.job');
@@ -459,6 +515,13 @@ async function openSheet(dir) {
     window.lab.artFetch(dir, g.name, g.appid)
   ]);
   if (sheetGame !== g) return;
+  sheetDetails = d;
+  if (!exeChoice.has(dir) && d.installedExe) {
+    const installed = d.exes.find((item) => item.rel.toLowerCase() === String(d.installedExe).toLowerCase());
+    if (installed) exeChoice.set(dir, installed.path);
+  }
+  if (!apiChoice.has(dir) && d.installedApi) apiChoice.set(dir, d.installedApi);
+  if (!routeChoice.has(dir) && d.installedRoute) routeChoice.set(dir, d.installedRoute);
 
   const info = art && !art.error && !art.none ? art : null;
   const cover = (info && info.cover) || (g.poster && g.poster.tall ? g.poster.url : null);
@@ -489,11 +552,12 @@ async function openSheet(dir) {
       ${info && info.summary ? `<p class="summary">${esc(info.summary.slice(0, 260))}${info.summary.length > 260 ? '…' : ''}</p>` : ''}
 
       ${exePicker(d, dir)}
+      ${installOptions(d, pick, dir)}
 
       <div class="specs">
         ${showExeFact && pick ? spec(t('fExe'), esc(pick.rel.split(/[\/]/).pop()), null, pick.rel) : ''}
         ${pick ? spec(t('fArchitecture'), `${pick.bitness || '?'}-bit`) : ''}
-        ${spec(t('fApi'), esc((pick && pick.apiLabel) || reasonText(d.reason) || '—'), pick && pick.api === 'dxgi' ? 'on' : 'off')}
+        ${spec(t('fApi'), esc((pick && selectedApi(pick, dir).label) || reasonText(d.reason) || '—'), pick && selectedApi(pick, dir).api === 'dxgi' ? 'on' : 'off')}
         ${spec('DLSS', dlssValue(inGameDlss, d.newDlss, upToDate))}
         ${spec(t('fAddon'), esc(d.addon ? t('installed') : t('notPresent')), d.addon ? 'on' : 'off')}
         ${spec(t('fReShade'), esc(d.reshade.installed
@@ -513,6 +577,10 @@ async function openSheet(dir) {
 
   $('sheetClose').onclick = closeSheet;
   wireExePicker(dir);
+  const apiSelect = $('apiChoice');
+  if (apiSelect) apiSelect.onchange = () => { apiChoice.set(dir, apiSelect.value); openSheet(dir); };
+  const routeSelect = $('routeChoice');
+  if (routeSelect) routeSelect.onchange = () => routeChoice.set(dir, routeSelect.value);
   $('doInstall').onclick = () => runJob('install', dir);
   $('doRestore').onclick = () => runJob('restore', dir);
 }
@@ -533,6 +601,8 @@ function wireExePicker(dir) {
     const option = event.target.closest('.exe-option');
     if (!option) return;
     exeChoice.set(dir, option.dataset.path);
+    apiChoice.delete(dir);
+    routeChoice.delete(dir);
     openSheet(dir);
   };
 }
@@ -545,8 +615,14 @@ async function runJob(kind, dir) {
   jobLines = [];
   jobLog(kind === 'install' ? '--- installing ---' : '--- restoring ---');
 
+  const pick = sheetDetails ? chosenExe(sheetDetails, dir) : null;
   const res = kind === 'install'
-    ? await window.lab.install(dir, exeChoice.get(dir) || null)
+    ? await window.lab.install(
+      dir,
+      exeChoice.get(dir) || null,
+      pick ? selectedRoute(sheetDetails, pick, dir) : null,
+      pick ? selectedApi(pick, dir).api : null
+    )
     : await window.lab.restoreGame(dir);
   install.textContent = t('install');
 
@@ -562,11 +638,15 @@ async function runJob(kind, dir) {
   } else {
     jobLog('failed: ' + (res.message || res.code));
     install.disabled = false;
+    // A failed external ReShade setup can still have changed files. Re-read
+    // the manifest so Restore originals becomes available immediately.
+    setTimeout(() => openSheet(dir), 250);
   }
 }
 
 function closeSheet() {
   sheetGame = null;
+  sheetDetails = null;
   $('overlay').classList.add('hidden');
 }
 
@@ -689,8 +769,7 @@ $('addGame').onclick = async () => { const d = await window.lab.addGame(); if (d
 $('addFolder').onclick = async () => { if (await window.lab.addFolder()) load(); };
 $('rescan').onclick = async () => {
   for (const g of state.games) g.cached = null;
-  renderGames();
-  await scanAll();
+  await load();
 };
 $('clearLog').onclick = () => { state.log = []; renderLog(); };
 

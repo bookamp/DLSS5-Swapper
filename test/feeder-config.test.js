@@ -9,6 +9,8 @@ test('32-bit ReShade configuration preserves user settings and orders the feeder
   const ini = config.configureGameReShade([
     '[GENERAL]',
     'PresetPath=.\\Custom.ini',
+    'EffectSearchPaths=.\\reshade-shaders\\Shaders\\**\\**,D:\\MyShaders\\**',
+    'TextureSearchPaths=.\\reshade-shaders\\Textures\\**\\**',
     'PreprocessorDefinitions=OLD_SETTING=1,DLSS5_MV_PROVIDER=0',
     'PerformanceMode=1',
     '',
@@ -17,6 +19,9 @@ test('32-bit ReShade configuration preserves user settings and orders the feeder
   ].join('\r\n'));
   assert.match(ini, /^PresetPath=\.\\Custom\.ini$/m);
   assert.match(ini, /^PerformanceMode=1$/m);
+  assert.match(ini, /^EffectSearchPaths=\.\\reshade-shaders\\Shaders\\\*\*,D:\\MyShaders\\\*\*$/m);
+  assert.match(ini, /^TextureSearchPaths=\.\\reshade-shaders\\Textures\\\*\*$/m);
+  assert.doesNotMatch(ini, /\\\*\*\\\*\*/);
   assert.match(ini, /^PreprocessorDefinitions=DLSS5_MV_PROVIDER=2,OLD_SETTING=1$/m);
   assert.match(ini, /^AddonPath=\.\\$/m);
 

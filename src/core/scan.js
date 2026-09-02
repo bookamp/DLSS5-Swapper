@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const pe = require('./pe');
+const emulators = require('./emulators');
 
 const SKIP_DIRS = new Set([
   '_dlss5_backup', 'reshade-shaders', 'host64', 'node_modules', '.git',
@@ -12,7 +13,8 @@ const SKIP_DIRS = new Set([
   // or executable we need. Skipping them lets packaged Unreal games be scanned
   // deeper without making every library refresh slower.
   'paks', 'movies', 'screenshots', 'saved', 'logs',
-  '_redist', 'prerequisites', 'directx', 'redist', '_commonredist', 'dotnet',
+  '_redist', 'prerequisites', 'directx', 'redist', 'redistributable',
+  'redistributables', '_commonredist', 'dotnet',
   // Shipped installers and vendor helpers keep their own executables around.
   'installer_resources', 'installer', 'installers', 'support', 'vcredist',
   '_support', 'directx_redist', 'eaanticheat', 'easyanticheat', 'battleye',
@@ -191,6 +193,24 @@ function apiFromFileName(file) {
   return null;
 }
 
+// A few engines keep compatibility or launcher code for an API they never use
+// to render the game. RDR2 carries a Direct3D 9 marker even though its only PC
+// renderers are DX12 and Vulkan, so binary-string guessing is actively wrong
+// for this executable. Profiles are intentionally exact-name and expose every
+// renderer the user can select instead of pretending the first marker wins.
+function gameApiProfile(file) {
+  if (/^rdr2\.exe$/i.test(path.basename(file))) {
+    return {
+      detected: { api: 'dxgi', label: 'DirectX 12', via: 'game-profile' },
+      choices: [
+        { api: 'dxgi', label: 'DirectX 12' },
+        { api: 'vulkan', label: 'Vulkan' }
+      ]
+    };
+  }
+  return null;
+}
+
 // Three ways a game can reach Direct3D, tried in order of certainty:
 //   1. it imports the API itself;
 //   2. it is a protected build that resolves the API with LoadLibrary, so only
@@ -274,11 +294,15 @@ async function scanGame(gameDir) {
       try { size = (await fs.promises.stat(full)).size; } catch { return; }
       const bitness = pe.getBitness(full);
       if (!bitness) return;
-      const detected = detectApi(full, pe.getImports(full));
+      const emulator = emulators.profileFor(full);
+      const gameProfile = emulator ? null : gameApiProfile(full);
+      const detected = emulator
+        ? { ...emulators.apiChoices(emulator)[0], via: 'emulator-profile' }
+        : (gameProfile ? gameProfile.detected : detectApi(full, pe.getImports(full)));
       if (!detected) return;
       // Small generic launchers remain excluded, but a valid PE whose own file
       // name states its renderer is often the real per-API game entry point.
-      if (size < 256 * 1024 && detected.via !== 'filename') return;
+      if (!emulator && size < 256 * 1024 && detected.via !== 'filename') return;
       exeCandidates.push({
         path: full,
         rel: path.relative(gameDir, full),
@@ -290,7 +314,14 @@ async function scanGame(gameDir) {
         via: detected.via,
         dynamic: detected.via !== 'imports',
         bitness,
-        dx12: detected.label === 'DirectX 12'
+        dx12: detected.label === 'DirectX 12',
+        emulator: emulator ? {
+          key: emulator.key, name: emulator.name, system: emulator.system,
+          hint: emulator.hint
+        } : null,
+        apiChoices: emulator
+          ? emulators.apiChoices(emulator)
+          : (gameProfile ? gameProfile.choices : [{ api: detected.api, label: detected.label }])
       });
     } else if (DLSS_FILE.test(name) || STREAMLINE_FILE.test(name)) {
       const item = {
@@ -340,7 +371,8 @@ async function scanGame(gameDir) {
   // A DX12 binary beats DX11, a shallow one beats a buried one, and a bigger
   // one beats a smaller one. Copies of the same executable that a crack or a
   // backup folder left behind are dropped, keeping the shallowest.
-  exeCandidates.sort((a, b) => ((b.declared ? 1 : 0) - (a.declared ? 1 : 0)) ||
+  exeCandidates.sort((a, b) => ((b.emulator ? 1 : 0) - (a.emulator ? 1 : 0)) ||
+    ((b.declared ? 1 : 0) - (a.declared ? 1 : 0)) ||
     (b.dx12 - a.dx12) || (playableRoleScore(b) - playableRoleScore(a)) ||
     (a.depth - b.depth) || (b.size - a.size));
   const seenNames = new Set();
@@ -368,20 +400,42 @@ async function scanGame(gameDir) {
     else if (!top.some((f) => f.endsWith('.exe'))) emptyReason = 'no-exe';
     else emptyReason = 'no-graphics-exe';
   }
-  const reshade = chosen ? inspectReShade(path.dirname(chosen.path)) : inspectReShade(gameDir);
+  let install = null;
+  const activeManifest = path.join(gameDir, '_DLSS5_Backup', 'manifest.json');
+  if (fs.existsSync(activeManifest)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(activeManifest, 'utf8'));
+      install = {
+        route: data.route || (data.game && data.game.bitness === 32 ? 'feeder' : 'native'),
+        api: data.game && data.game.api,
+        exe: data.game && data.game.exe,
+        vulkanLayer: data.vulkanLayer || null
+      };
+    } catch {}
+  }
+  let reshade = chosen ? inspectReShade(path.dirname(chosen.path)) : inspectReShade(gameDir);
+  if (!reshade.installed && install && install.vulkanLayer &&
+      fs.existsSync(install.vulkanLayer.manifest || '')) {
+    reshade = {
+      installed: true, file: 'Vulkan layer', kind: 'vulkan-layer',
+      version: '6.8.0', addonSupport: true
+    };
+  }
 
   return {
     gameDir,
     gameName: path.basename(gameDir),
     exeCandidates,
     chosen,
+    emulator: chosen ? chosen.emulator : null,
     dlssFiles,
     primaryDlss,
     streamlineFiles,
     addonPresent,
     emptyReason,
     reshade,
-    hasBackup: fs.existsSync(path.join(gameDir, '_DLSS5_Backup', 'manifest.json'))
+    install,
+    hasBackup: fs.existsSync(activeManifest)
   };
 }
 
@@ -415,14 +469,16 @@ function scanSource(sourceDir) {
   const nr = payload.find((f) => /^nvngx_dlssnr\.dll$/i.test(f.name));
   const feederDir = path.join(sourceDir, 'feeder');
   const feeder = {
+    addon64: path.join(feederDir, 'dlss5-feed.addon64'),
     addon32: path.join(feederDir, 'dlss5-feed.addon32'),
     host64: path.join(feederDir, 'dlss5-feed-host64.exe'),
     feedShader: path.join(feederDir, 'reshade-shaders', 'Shaders', 'DLSS5_Feed.fx'),
     shaderRoot: path.join(feederDir, 'reshade-shaders'),
     hostAddon: path.join(feederDir, 'host64', 'renodx-dlss5.addon64'),
-    dgVoodooDir: path.join(feederDir, 'dgvoodoo')
+    dgVoodooDir: path.join(feederDir, 'dgvoodoo'),
+    vulkanLayerDir: path.join(sourceDir, 'reshade-vulkan')
   };
-  feeder.ok = [feeder.addon32, feeder.host64, feeder.feedShader, feeder.hostAddon]
+  feeder.ok32 = [feeder.addon32, feeder.host64, feeder.feedShader, feeder.hostAddon]
     .concat([
       path.join(feeder.shaderRoot, 'Shaders', 'vort_Motion.fx'),
       path.join(feeder.shaderRoot, 'Shaders', 'ReShade.fxh'),
@@ -430,6 +486,15 @@ function scanSource(sourceDir) {
       path.join(feeder.shaderRoot, 'Shaders', 'Includes', 'vort_Defs.fxh'),
       path.join(feeder.shaderRoot, 'Textures', 'vort_BlueNoise.png')
     ]).every((file) => fs.existsSync(file));
+  feeder.ok64 = [feeder.addon64, feeder.feedShader, feeder.hostAddon]
+    .concat([
+      path.join(feeder.shaderRoot, 'Shaders', 'vort_Motion.fx'),
+      path.join(feeder.shaderRoot, 'Shaders', 'ReShade.fxh'),
+      path.join(feeder.shaderRoot, 'Shaders', 'ReShadeUI.fxh')
+    ]).every((file) => fs.existsSync(file));
+  feeder.vulkanOk = ['ReShade64.dll', 'ReShade64.json', 'ReShade32.dll', 'ReShade32.json']
+    .every((name) => fs.existsSync(path.join(feeder.vulkanLayerDir, name)));
+  feeder.ok = feeder.ok32 && feeder.ok64;
   return {
     ok: payload.length > 0,
     reason: payload.length ? null : 'sourceEmpty',

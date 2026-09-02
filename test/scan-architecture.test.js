@@ -114,6 +114,28 @@ test('Dying Light The Beast Agility SDK executable is found in its deep x64 path
   assert.equal(scan.chosen.via, 'strings');
 });
 
+test('RDR2 ignores its legacy D3D9 marker and Rockstar redistributable launcher', async (t) => {
+  const gameDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dlss5-rdr2-'));
+  t.after(() => fs.rmSync(gameDir, { recursive: true, force: true }));
+
+  const gameExe = path.join(gameDir, 'RDR2.exe');
+  const launcher = path.join(gameDir, 'Redistributables', 'Rockstar-Games-Launcher.exe');
+  minimalPe(gameExe, { bitness: 64, marker: 'Direct3DCreate9' });
+  minimalPe(launcher, { bitness: 64, marker: 'D3D12CreateDevice' });
+
+  const scan = await scanGame(gameDir);
+
+  assert.equal(scan.exeCandidates.length, 1);
+  assert.equal(scan.chosen.path, gameExe);
+  assert.equal(scan.chosen.api, 'dxgi');
+  assert.equal(scan.chosen.apiLabel, 'DirectX 12');
+  assert.equal(scan.chosen.via, 'game-profile');
+  assert.deepEqual(scan.chosen.apiChoices, [
+    { api: 'dxgi', label: 'DirectX 12' },
+    { api: 'vulkan', label: 'Vulkan' }
+  ]);
+});
+
 test('Assassins Creed Black Flag selects the 32-bit single-player executable', async (t) => {
   const gameDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dlss5-ac4-'));
   t.after(() => fs.rmSync(gameDir, { recursive: true, force: true }));
