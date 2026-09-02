@@ -28,6 +28,7 @@
 | --- | --- | --- |
 | **DLSS5-Swapper-Setup-2.1.1.exe** | 231 MB | Installer — shortcuts, clean uninstall |
 | **DLSS5-Swapper-2.1.1-portable.exe** | 231 MB | Single file, no installation |
+| **DLSS5-Swapper-2.1.1-x86_64.AppImage** | Linux | Portable Linux app — download from [Releases](../../releases) |
 
 Get either from the [**Releases**](../../releases) page. Windows 10/11 64-bit
 and an NVIDIA RTX card. Nothing else to install.
@@ -41,6 +42,18 @@ prefix. Launch the game once with a Proton compatibility tool selected before
 installing. Native Linux games are not supported because the DLSS 5 and ReShade
 payloads are Windows DLLs. The Vulkan Feeder route is not available on Linux;
 select a DirectX renderer for Proton games.
+
+To run the AppImage, make it executable and open it:
+
+```bash
+chmod +x DLSS5-Swapper-*-x86_64.AppImage
+./DLSS5-Swapper-*-x86_64.AppImage
+```
+
+> The Linux build needs the same bundled payload as the Windows release. A
+> preview built from this repository without `payload/` can test the interface
+> and Steam/Proton detection, but cannot install DLSS until that payload is
+> supplied.
 
 > Not code-signed, so SmartScreen shows *"Windows protected your PC"* the first
 > time. Click **More info → Run anyway**.
