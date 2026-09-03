@@ -77,14 +77,11 @@ Compatibility varies by renderer and game. Xenia HUD correction remains experime
 Includes English, Arabic, Chinese, Spanish, Portuguese, Russian, German, French,
 Japanese, Korean and more. **Arabic, Persian and Urdu support right-to-left layout.**
 
-<details>
-<summary><strong>More screenshots</strong></summary>
+## Screenshots
 
 <p><img src="https://raw.githubusercontent.com/rakanki911/DLSS5-Swapper/7415065e5c5437441d0e0b0a0362d0ada6d86e15/docs/screenshots/02-games.png" alt="Games" width="100%"></p>
 <p><img src="https://raw.githubusercontent.com/rakanki911/DLSS5-Swapper/7415065e5c5437441d0e0b0a0362d0ada6d86e15/docs/screenshots/03-library.png" alt="Library" width="100%"></p>
 <p><img src="https://raw.githubusercontent.com/rakanki911/DLSS5-Swapper/7415065e5c5437441d0e0b0a0362d0ada6d86e15/docs/screenshots/04-game.png" alt="Game details" width="100%"></p>
-
-</details>
 
 ## Before installing
 
