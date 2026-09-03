@@ -67,15 +67,36 @@ For Vulkan backend changes, **restore originals first**. OptiScaler is not the e
 
 Select the emulator folder and its active renderer, then use **ReShade/Feeder**.
 
-DuckStation, PCSX2, RPCS3, Dolphin, PPSSPP, Xenia, Cemu, Ryujinx, yuzu-family,
-shadPS4, Citra-family, melonDS, Flycast, xemu, Vita3K, RetroArch, mGBA, Snes9x and Play!.
+<table>
+  <tr><th colspan="3">Emulators</th></tr>
+  <tr><td>DuckStation</td><td>PCSX2</td><td>RPCS3</td></tr>
+  <tr><td>Dolphin</td><td>PPSSPP</td><td>Xenia</td></tr>
+  <tr><td>Cemu</td><td>Ryujinx</td><td>yuzu / suyu / Eden / Citron / Sudachi</td></tr>
+  <tr><td>shadPS4</td><td>Azahar / Citra / Lime3DS</td><td>melonDS</td></tr>
+  <tr><td>Flycast</td><td>xemu</td><td>Vita3K</td></tr>
+  <tr><td>RetroArch</td><td>mGBA</td><td>Snes9x</td></tr>
+  <tr><td>Play!</td><td></td><td></td></tr>
+</table>
 
 Compatibility varies by renderer and game. Xenia HUD correction remains experimental.
 
 ## 38 languages
 
-Includes English, Arabic, Chinese, Spanish, Portuguese, Russian, German, French,
-Japanese, Korean and more. **Arabic, Persian and Urdu support right-to-left layout.**
+<table>
+  <tr><th colspan="4">All 38 languages</th></tr>
+  <tr><td>English</td><td>العربية</td><td>简体中文</td><td>繁體中文</td></tr>
+  <tr><td>Español</td><td>Português</td><td>Русский</td><td>Deutsch</td></tr>
+  <tr><td>Français</td><td>日本語</td><td>한국어</td><td>Italiano</td></tr>
+  <tr><td>Türkçe</td><td>Polski</td><td>Українська</td><td>Nederlands</td></tr>
+  <tr><td>Čeština</td><td>Magyar</td><td>Română</td><td>Ελληνικά</td></tr>
+  <tr><td>Svenska</td><td>Dansk</td><td>Norsk</td><td>Suomi</td></tr>
+  <tr><td>ไทย</td><td>Tiếng Việt</td><td>Bahasa Indonesia</td><td>Bahasa Melayu</td></tr>
+  <tr><td>Filipino</td><td>हिन्दी</td><td>বাংলা</td><td>فارسی</td></tr>
+  <tr><td>اردو</td><td>Български</td><td>Српски</td><td>Hrvatski</td></tr>
+  <tr><td>Slovenčina</td><td>Català</td><td></td><td></td></tr>
+</table>
+
+**Arabic, Persian and Urdu support right-to-left layout.**
 
 ## Screenshots
 
