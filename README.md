@@ -15,11 +15,11 @@
   <img src="https://img.shields.io/badge/languages-38-8fd400" alt="38 languages">
 </p>
 
-## Download 2.2.0
+## Download 2.2.1
 
-[**Windows Installer**](https://github.com/rakanki911/DLSS5-Swapper/releases/download/v2.2.0/DLSS5-Swapper-Setup-2.2.0.exe) ·
-[**Portable**](https://github.com/rakanki911/DLSS5-Swapper/releases/download/v2.2.0/DLSS5-Swapper-2.2.0-portable.exe) ·
-[Checksums](https://github.com/rakanki911/DLSS5-Swapper/releases/download/v2.2.0/SHA256SUMS.txt)
+[**Windows Installer**](https://github.com/rakanki911/DLSS5-Swapper/releases/download/v2.2.1/DLSS5-Swapper-Setup-2.2.1.exe) ·
+[**Portable**](https://github.com/rakanki911/DLSS5-Swapper/releases/download/v2.2.1/DLSS5-Swapper-2.2.1-portable.exe) ·
+[Checksums](https://github.com/rakanki911/DLSS5-Swapper/releases/download/v2.2.1/SHA256SUMS.txt)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/rakanki911/DLSS5-Swapper/7415065e5c5437441d0e0b0a0362d0ada6d86e15/docs/screenshots/01-home.png" alt="Home" width="100%">
@@ -34,18 +34,34 @@
 - **Controlled scanning:** full-drive scanning is **off by default**. Added folders still scan normally; enable all-drive discovery or remove scan folders in Settings.
 - **Right-click shortcuts:** open/copy folder, rescan, change cover, restore originals or hide a game.
 - **Backups and History:** restore original files, keep installation records, and copy History/activity/install logs.
+- **In-game overlay:** press **F8** to open the app's own panel over the running game and move the real DLSS Neural Rendering sliders while you play.
+- **Rendering API override:** optional, per game, with **Automatic** as the default; detection is never overwritten.
 - **Custom add-ons:** the Add-ons page remains available alongside the integrated installation routes.
 
-## New in 2.2.0
+## New in 2.2.1
 
-- **⭐ Optional [OptiScaler DLSS-NR](https://github.com/Dagherbou/OptiScaler_DLSSNR/releases):** choose it in the game page instead of ReShade. Apply the change with the game closed; switch back when wanted. Settings are kept separately.
-- **SWTOR / DX9:** correct Feeder selection instead of the native-only route; adds 32-bit DX8 installation.
-- **Feeder repairs:** matching 0.12.0 components, corrected shader/preset settings, and missing Visual C++ runtime checks.
-- **Better detection:** small/nested executables and Cyberpunk 2077 / Phantom Liberty library entries.
-- **Safer installs/restores:** preserve native Streamline/FG files, protect backups during repeat installs and backend switches, and restore even when the executable is missing.
-- **History and translations:** fixes missing installation history; search, filters and installation warnings now cover all 38 languages.
+- **⭐ In-game overlay:** press **F8** and the app's own panel appears over the
+  running game — the same HTML, fonts and sliders as the preview, connected to
+  the pinned RenoDX v4.7 build so the controls move the settings that are really
+  loaded. **While the panel is open the game receives no mouse or keyboard
+  input**, so the camera holds still and a slider can be judged on one fixed
+  shot, exactly as ReShade does for its own overlay. Install it together with
+  DLSS from one switch, choose your hotkey, or remove it on its own.
+- **Overlay themes, including your own:** Emerald, Azure and Amethyst, plus
+  **Create theme** — pick an accent colour and the panel's other shades are
+  derived from it, in the app and in the game alike.
+- **Per-game rendering API override:** now **optional**, with **Automatic** as
+  the default. Pick DirectX 8/9/10/11/12, Vulkan or OpenGL for a game that
+  reports the wrong renderer; automatic detection is left untouched.
+- **Artwork for everyone:** posters and banners come from Steam's public
+  endpoints with no key, so every user sees the same covers and heroes.
+- **Some issues were fixed**, including the overlay connection line that
+  contradicted the CONNECTED badge, dialogs that stayed dark in the light theme,
+  theme cards misaligned in Arabic/Persian/Urdu, and an updated overlay build
+  that refused to install over the previous one.
 
-[Full fixes and known limitations →](docs/releases/v2.2.0.md)
+[Full 2.2.1 notes →](https://github.com/rakanki911/DLSS5-Swapper/releases/tag/v2.2.1) ·
+[What arrived in 2.2.0 →](docs/releases/v2.2.0.md)
 
 ## Compatibility
 
@@ -59,6 +75,7 @@
 | **DirectX 9 / 8** | DX9: 32/64-bit; DX8: 32-bit, through dgVoodoo2 → DX11 → Feeder |
 | **Vulkan / OpenGL** | ReShade/Feeder; eligible Vulkan games can also use OptiScaler |
 | **DirectX 10** | Not directly supported by Feeder; choose DX11 when available |
+| **In-game overlay** | 64-bit DirectX 11 / 12 games with ReShade add-on support |
 
 OptiScaler's DX11/Vulkan path uses a DX12 bridge with FSR output by default.
 For Vulkan backend changes, **restore originals first**. OptiScaler is not the emulator/non-DLSS route.
