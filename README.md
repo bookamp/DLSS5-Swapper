@@ -34,7 +34,7 @@
 - **Controlled scanning:** full-drive scanning is **off by default**. Added folders still scan normally; enable all-drive discovery or remove scan folders in Settings.
 - **Right-click shortcuts:** open/copy folder, rescan, change cover, restore originals or hide a game.
 - **Backups and History:** restore original files, keep installation records, and copy History/activity/install logs.
-- **In-game overlay:** press **F8** to open the app's own panel over the running game and move the real DLSS Neural Rendering sliders while you play.
+- **In-game overlay:** press **F8** to open the app's own panel over the running game and move the real DLSS Neural Rendering sliders while you play. Supports the **DLSS5-Feeder** and **RenoDX v4.7** routes only.
 - **Rendering API override:** optional, per game, with **Automatic** as the default; detection is never overwritten.
 - **Custom add-ons:** the Add-ons page remains available alongside the integrated installation routes.
 
@@ -47,6 +47,8 @@
   input**, so the camera holds still and a slider can be judged on one fixed
   shot, exactly as ReShade does for its own overlay. Install it together with
   DLSS from one switch, choose your hotkey, or remove it on its own.
+  **It supports DLSS5-Feeder and RenoDX v4.7 only** — the panel is built around
+  that exact, hash-verified build and is not offered for OptiScaler.
 - **Overlay themes, including your own:** Emerald, Azure and Amethyst, plus
   **Create theme** — pick an accent colour and the panel's other shades are
   derived from it, in the app and in the game alike.
@@ -75,7 +77,7 @@
 | **DirectX 9 / 8** | DX9: 32/64-bit; DX8: 32-bit, through dgVoodoo2 → DX11 → Feeder |
 | **Vulkan / OpenGL** | ReShade/Feeder; eligible Vulkan games can also use OptiScaler |
 | **DirectX 10** | Not directly supported by Feeder; choose DX11 when available |
-| **In-game overlay** | 64-bit DirectX 11 / 12 games with ReShade add-on support |
+| **In-game overlay** | 64-bit DirectX 11 / 12 games with ReShade add-on support; **DLSS5-Feeder and RenoDX v4.7 only** |
 
 OptiScaler's DX11/Vulkan path uses a DX12 bridge with FSR output by default.
 For Vulkan backend changes, **restore originals first**. OptiScaler is not the emulator/non-DLSS route.
