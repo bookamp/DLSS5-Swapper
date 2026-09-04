@@ -65,6 +65,21 @@
 [Full 2.2.1 notes →](https://github.com/rakanki911/DLSS5-Swapper/releases/tag/v2.2.1) ·
 [What arrived in 2.2.0 →](docs/releases/v2.2.0.md)
 
+### The Overlay page
+
+<p><img src="docs/screenshots/07-overlay.png" alt="Overlay page with the Emerald, Azure and Amethyst themes" width="100%"></p>
+
+### Create your own theme
+
+Pick an accent colour and the panel's other shades follow it. The preview is the
+real panel, not a colour swatch.
+
+<p><img src="docs/screenshots/08-overlay-create-theme.png" alt="Create a theme dialog with a live panel preview" width="100%"></p>
+
+### Preview before you choose
+
+<p><img src="docs/screenshots/09-overlay-preview.png" alt="Interactive overlay preview" width="100%"></p>
+
 ## Compatibility
 
 | Category | Support |
