@@ -12,11 +12,13 @@ const { scanGame } = require('./src/core/scan.js');
 const { discover, folder, dedupe, isInside, steam } = require('./src/library');
 const { contextForSteamGame, createSetupRunner } = require('./src/core/proton');
 const art = require('./src/steamart');
-const { backupRoot } = require('./src/core/apply.js');
+const { backupRoot, saveActiveManifest, writeTracked } = require('./src/core/apply.js');
 const { scanSource } = require('./src/core/scan.js');
 const pe = require('./src/core/pe.js');
 const { ensureLumenite, ensureDgVoodoo, missingVCRuntime } = require('./src/core/runtime-components.js');
 const installRoutes = require('./src/shared/install-routes');
+const renderingApi = require('./src/shared/rendering-api');
+const { projectUrl } = require('./src/core/project-links');
 const optiscaler = require('./src/core/optiscaler');
 const backends = require('./src/core/backend-manager');
 const journal = require('./src/core/file-journal');
@@ -61,13 +63,13 @@ const KNOWN = {
   // The build that used to ship. Recognised if someone adds it by hand, but
   // it is no longer the one bundled.
   '189efdee6a327833': { name: 'Stable (previous)' },
-  // v4.6 carries the same version resource as the v4.55 it replaces, so only
-  // the hash tells them apart - which is why builds are keyed by content here.
-  // The flickering warning that rode with v4.55 is gone: this build fixes it.
-  '0c0a02578d2aadf2': {
-    name: 'v4.6',
-    shipped: true,
-    notes: ['Fixed flickering in certain games', 'UI changes']
+  // Superseded by the v4.7 that now ships. Kept recognised so a hand-added copy
+  // is still named rather than showing up as its folder.
+  '0c0a02578d2aadf2': { name: 'v4.6 (previous)' },
+  // Bundled: the build the in-game overlay's adapter is fingerprinted against.
+  '88116071ef689864': {
+    name: 'v4.7',
+    shipped: true
   }
 };
 
@@ -203,7 +205,17 @@ function saveState(state) {
   try {
     fs.mkdirSync(path.dirname(stateFile()), { recursive: true });
     fs.writeFileSync(stateFile(), JSON.stringify(state, null, 2), 'utf8');
-  } catch {}
+    return true;
+  } catch { return false; }
+}
+
+// A choice belongs to one executable, not every launcher in the same folder.
+const apiPreferenceKey = (dir, exe) => crypto.createHash('sha256')
+  .update(path.resolve(dir).toLowerCase()).update('\0')
+  .update(path.relative(dir, exe).toLowerCase()).digest('hex');
+function apiPreference(state, dir, exe) {
+  const value = state.apiOverrides?.[apiPreferenceKey(dir, exe)];
+  return renderingApi.valid(value) ? value : 'auto';
 }
 
 // Renderer can only load what it is handed a URL for.
@@ -252,10 +264,37 @@ function createWindow() {
 
 app.setAppUserModelId('com.rakan.dlss5swapper');
 
-app.whenReady().then(() => {
+// The same overlay library the Overlay page manages, so an install picks up
+// exactly the build shown there.
+function overlayLibrary() {
+  const { createOverlayLibrary } = require('./src/overlays');
+  const root = path.resolve(__dirname);
+  const builtin = app.isPackaged
+    ? path.join(process.resourcesPath, 'overlay', 'dlss5-lab-overlay.addon64')
+    : path.join(root, 'dist/overlay/dlss5-lab-overlay.addon64');
+  return createOverlayLibrary(path.join(app.getPath('userData'), 'overlay-library'), builtin,
+    [root, app.isPackaged ? path.dirname(app.getPath('exe')) : root]);
+}
+
+// The in-game overlay draws its panel in an offscreen window here and streams
+// the frames over a local pipe, so the bridge lives as long as the app does.
+let overlayBridge;
+let quitting = false;
+
+app.whenReady().then(async () => {
+  // Registered here rather than at load: main.js is exercised in a plain vm
+  // context by the tests, where src modules are stubbed and cannot be called.
+  require('./src/overlay-ipc')({ app, ipcMain, dialog, shell, window: () => win });
   createWindow();
+  try {
+    overlayBridge = await require('./src/overlay-bridge')({ BrowserWindow, userData: app.getPath('userData') });
+    if (quitting) overlayBridge.close();
+  } catch (error) {
+    if (!quitting) console.error('Overlay bridge:', error.message);
+  }
 });
 app.on('window-all-closed', () => app.quit());
+app.on('before-quit', () => { quitting = true; overlayBridge?.close(); });
 
 // ---------- library ----------
 
@@ -508,6 +547,11 @@ ipcMain.handle('reset', () => {
 });
 
 ipcMain.handle('open', (_event, dir) => shell.openPath(dir));
+ipcMain.handle('open-project', async (_event, destination) => {
+  const url = projectUrl(destination);
+  if (!url) return false;
+  try { await shell.openExternal(url); return true; } catch { return false; }
+});
 
 // The home page lists the last games touched, newest first.
 ipcMain.handle('touch', (_event, dir) => {
@@ -719,6 +763,7 @@ ipcMain.handle('art-fetch', async (_event, dir, name, appid) => {
 
 ipcMain.handle('details', async (_event, dir) => {
   const scan = await scanGame(dir);
+  const state = loadState();
   const hasNativeDlss = installRoutes.nativeDlssPresent(scan);
   const files = [...scan.dlssFiles, ...scan.streamlineFiles]
     .map((f) => ({ rel: f.rel, name: f.name, version: f.version }));
@@ -746,6 +791,7 @@ ipcMain.handle('details', async (_event, dir) => {
       installIssue: compatibility.targetIssue(dir, e.path),
       antiCheatWarning: compatibility.hasAntiCheat(dir, e.path),
       hasNativeDlss,
+      apiOverride: apiPreference(state, dir, e.path),
       apiChoices: e.apiChoices || [{ api: e.api, label: e.apiLabel }],
       routes: installRoutes.routesFor({ ...e, hasNativeDlss })
     })),
@@ -763,6 +809,22 @@ ipcMain.handle('details', async (_event, dir) => {
 });
 
 let mutationBusy = false;
+ipcMain.handle('set-api-override', async (_event, dir, exePath, value) => {
+  if (mutationBusy) return { ok: false, code: 'errJobBusy' };
+  if (!renderingApi.valid(value) || typeof dir !== 'string' || !path.isAbsolute(dir) || typeof exePath !== 'string') {
+    return { ok: false, code: 'errApiChoice' };
+  }
+  const scan = await scanGame(dir);
+  if (mutationBusy) return { ok: false, code: 'errJobBusy' };
+  if (!scan.exeCandidates.some(exe => exe.path === exePath)) return { ok: false, code: 'errApiChoice' };
+  const state = loadState();
+  state.apiOverrides = state.apiOverrides && typeof state.apiOverrides === 'object' && !Array.isArray(state.apiOverrides)
+    ? state.apiOverrides : {};
+  const key = apiPreferenceKey(dir, exePath);
+  if (value === 'auto') delete state.apiOverrides[key];
+  else state.apiOverrides[key] = value;
+  return saveState(state) ? { ok: true } : { ok: false, code: 'errApiSave' };
+});
 async function exclusiveMutation(work) {
   if (mutationBusy) return { ok: false, code: 'errJobBusy' };
   mutationBusy = true;
@@ -779,11 +841,12 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
 
   // Honour the sheet's choice, but only if it is one of the candidates we
   // actually found - never patch a path the renderer made up.
-  const target = scan.exeCandidates.find((e) => e.path === exePath) || scan.chosen;
+  const detected = scan.exeCandidates.find((e) => e.path === exePath) || scan.chosen;
+  const selection = requestedApi ?? apiPreference(loadState(), dir, detected.path);
+  const target = renderingApi.effective(detected, selection);
   compatibility.assertSafeTarget(dir, target.path);
   target.hasNativeDlss = installRoutes.nativeDlssPresent(scan);
-  const apiChoices = target.apiChoices || [{ api: target.api, label: target.apiLabel }];
-  const api = apiChoices.some((item) => item.api === requestedApi) ? requestedApi : target.api;
+  const api = target.api;
   const availableRoutes = installRoutes.routesFor(target, api);
   if (requestedRoute === 'optiscaler' && !availableRoutes.includes('optiscaler')) {
     return { ok: false, code: installRoutes.optiReason(target, api) || 'optiUnsupported' };
@@ -888,6 +951,37 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
   // add-ons alone; all managed copies now participate in the transaction.
   const companions = route === 'native' && target.bitness === 64 ? companionAddons() : [];
 
+  // The in-game overlay rides along with the install when it is switched on and
+  // the executable is one it supports. Prepared before anything is written, so
+  // an unsupported build refuses the install rather than half-finishing it.
+  const gameOverlay = require('./src/game-overlay');
+  let overlayWanted = false;
+  // An unreadable preference means the overlay is off. A DLSS install must not
+  // fail because of it.
+  try { overlayWanted = require('./src/overlay-preferences').read(app.getPath('userData')).enabled === true; } catch {}
+
+  let overlayPlan = null;
+  if (overlayWanted) {
+    try {
+      // Drop records whose bytes are already gone - a restore, or an overlay
+      // rebuilt since. Without this, prepare() refuses the new build because an
+      // old record still claims a different one is installed here.
+      gameOverlay.cleanupMissing(overlayLibrary(), dir);
+      // An update ships a different overlay build. Retire the copy this app
+      // installed here for the previous one instead of stopping with "remove
+      // the previous test overlay first".
+      gameOverlay.replaceOutdated(overlayLibrary(), path.dirname(target.path));
+      if (gameOverlay.routes(target).includes(route)) {
+        overlayPlan = gameOverlay.prepare({ library: overlayLibrary(), target, route });
+      }
+    } catch (error) {
+      // DLSS is the job; the overlay rides along. A missing or conflicting
+      // overlay build is reported and skipped - the switch defaults to on, so
+      // failing here would break every install on a machine without one.
+      send({ code: 'overlaySkipped', params: { error: error.message } });
+    }
+  }
+
   try {
     // A game could have been launched while the component download ran.
     await guards.assertGameClosed(dir, target.path);
@@ -897,7 +991,7 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
       gameDir: dir,
       exePath: target.path,
       api,
-      apiLabel: apiChoices.find(item => item.api === api)?.label || target.apiLabel,
+      apiLabel: target.apiLabel,
       bitness: target.bitness,
       route,
       antiCheatAcknowledged,
@@ -913,9 +1007,35 @@ ipcMain.handle('install', (event, dir, exePath, requestedRoute, requestedApi) =>
       addStreamline: false,
       upgradeReShade: false
     }, send);
+    // By this point DLSS is installed and the manifest is written. An overlay
+    // failure here is reported, never turned into a failed install that the
+    // caller would read as "nothing happened".
+    if (overlayPlan) try {
+      const exeDir = path.dirname(target.path);
+      // Feeder's own config template omits two upstream defaults the overlay
+      // reads; fill them without touching a choice already made.
+      if (route === 'feeder') {
+        const cfg = path.join(exeDir, 'dlss5-feed.cfg');
+        if (fs.existsSync(cfg)) {
+          await writeTracked(manifest, dir, cfg,
+            gameOverlay.completeFeederConfig(fs.readFileSync(cfg, 'utf8')), { kind: 'config' });
+        }
+      }
+      await journal.capture(dir, overlayPlan.file);
+      await gameOverlay.attach({
+        library: overlayLibrary(), target, gameDir: dir, manifest,
+        saveManifest: saveActiveManifest, plan: overlayPlan
+      });
+      send({ code: 'addonInstalled', params: { name: 'DLSS 5 Overlay (F8)' } });
+    } catch (error) {
+      send({ code: 'overlaySkipped', params: { error: error.message } });
+      try { gameOverlay.cleanupMissing(overlayLibrary(), dir); } catch {}
+    }
     saveOperation(dir, manifest, 'install', send);
     return { ok: true, replaced: manifest.replaced.length, added: manifest.added.length };
   } catch (err) {
+    // Drop stale overlay records whose bytes the rollback already removed.
+    try { require('./src/game-overlay').cleanupMissing(overlayLibrary(), dir); } catch {}
     return { ok: false, code: err.code, message: err.message };
   }
 }));

@@ -17,6 +17,11 @@ let copyFailure = false;
 let nextMenuAction = null;
 let gameMenuCalls = [];
 let gameActionCalls = [];
+const apiOverrides = new Map();
+let detectedApi = { api: 'dxgi', apiLabel: 'DirectX 12', bitness: 64 };
+let apiSaveFailure = false;
+let projectLinkFailure = false;
+const projectLinks = [];
 const games = [
   ['Euro Truck Simulator', 'DirectX 12', '2.2.16', true],
   ['American Truck Simulator', 'DirectX 11', '310.8.0.0', false],
@@ -56,6 +61,15 @@ contextBridge.exposeInMainWorld('lab', {
   testMenuCalls: () => gameMenuCalls,
   testActionCalls: () => gameActionCalls,
   open: async dir => { gameActionCalls.push({ action: 'open', dir }); return ''; },
+  openProject: async value => { projectLinks.push(value); return !projectLinkFailure; },
+  testProjectLinks: () => projectLinks,
+  testProjectLinkFailure: value => { projectLinkFailure = value; },
+  setApiOverride: async (dir, exe, value) => {
+    if (apiSaveFailure) return { ok: false, code: 'errApiSave' };
+    apiOverrides.set(exe, value); return { ok: true };
+  },
+  testApiSaveFailure: value => { apiSaveFailure = value; },
+  testDetectedApi: value => { detectedApi = value; },
   setPoster: async dir => { gameActionCalls.push({ action: 'poster', dir }); return 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>'; },
   hide: async dir => { gameActionCalls.push({ action: 'hide', dir }); return true; },
   testHistory: rows => { historyRows = rows; },
@@ -67,6 +81,7 @@ contextBridge.exposeInMainWorld('lab', {
     previousReShadeRoute: 'native', installedApi: installedRoute ? 'dxgi' : null,
     installedExe: installedRoute ? 'Game.exe' : null, hasBackup: Boolean(installedRoute),
     exes: [{ rel: 'Game.exe', path: dir + '\\Game.exe', api: 'dxgi', apiLabel: 'DirectX 12', bitness: 64, size: 104857600,
+      ...detectedApi, apiOverride: apiOverrides.get(dir + '\\Game.exe') || 'auto',
       hasNativeDlss: true, installIssue, antiCheatWarning, apiChoices: [{ api: 'dxgi', label: 'DirectX 12' }] }],
     files: [{ name: 'nvngx_dlss.dll', rel: 'nvngx_dlss.dll', version: '2.2.16' }],
     currentDlss: { rel: 'nvngx_dlss.dll', version: '2.2.16' }, addon: installedRoute === 'native',

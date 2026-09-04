@@ -68,6 +68,16 @@ function show(view) {
   if (view === 'history') renderHistory();
   if (view === 'settings') renderSettings();
   if (view === 'addons') renderAddons();
+  if (view === 'overlays') window.overlayLab.render();
+}
+
+for (const link of document.querySelectorAll('[data-project]')) {
+  link.addEventListener('click', async event => {
+    event.preventDefault();
+    let ok = false;
+    try { ok = await window.lab.openProject(link.dataset.project); } catch {}
+    $('projectLinkError').classList.toggle('hidden', Boolean(ok));
+  });
 }
 
 // ---------------- recent game ----------------
@@ -567,7 +577,6 @@ let jobRunning = false;
 // the sheet - a language switch does that - does not silently reset the choice.
 const exeChoice = new Map();
 const routeChoice = new Map();
-const apiChoice = new Map();
 
 // One row per fact, in a single panel. A wrapping grid of bordered tiles left
 // an orphan on its own line whenever the count was odd, and repeated the same
@@ -621,17 +630,15 @@ function exePicker(d, dir) {
 }
 
 function selectedApi(pick, dir) {
-  const choices = (pick && pick.apiChoices) || [];
-  const wanted = apiChoice.get(dir);
-  return choices.find((item) => item.api === wanted) || choices[0] || { api: pick.api, label: pick.apiLabel };
+  return window.renderingApi.resolve(pick, pick?.apiOverride || 'auto');
 }
 
-function routesFor(pick, api) {
-  return window.installRoutes.routesFor(pick, api);
+function routesFor(pick) {
+  return window.installRoutes.routesFor(window.renderingApi.effective(pick, pick?.apiOverride || 'auto'));
 }
 
-function selectedRoute(d, pick, dir, api = selectedApi(pick, dir).api) {
-  const routes = routesFor(pick, api);
+function selectedRoute(d, pick, dir) {
+  const routes = routesFor(pick);
   const wanted = routeChoice.get(dir);
   if (routes.includes(wanted)) return wanted;
   if (routes.includes(d.recommendedRoute)) return d.recommendedRoute;
@@ -650,15 +657,20 @@ function installOptions(d, pick, dir) {
   if (!pick) return warning;
   const api = selectedApi(pick, dir);
   const route = selectedRoute(d, pick, dir, api.api);
-  const apis = pick.apiChoices || [{ api: pick.api, label: pick.apiLabel }];
-  const routes = routesFor(pick, api.api);
+  const routes = routesFor(pick);
   const opti = route === 'optiscaler';
-  const optiReason = window.installRoutes.optiReason(pick, api.api);
-  if (!routes.length) return `<div class="emu-note">${t('unsupportedRendererHint')}</div>${warning}`;
+  const optiReason = window.installRoutes.optiReason(window.renderingApi.effective(pick, pick.apiOverride || 'auto'));
+  const apiField = `<label class="api-field"><span>${t('fApi')}</span><select id="apiChoice" aria-describedby="apiHint">
+    <option value="auto"${!pick.apiOverride || pick.apiOverride === 'auto' ? ' selected' : ''}>${esc(t('apiAutomatic', pick.apiLabel || t('unknownApi')))}</option>
+    ${window.renderingApi.choices.map(item => `<option value="${item.value}"${pick.apiOverride === item.value ? ' selected' : ''}>${item.label}</option>`).join('')}
+    </select></label>`;
+  const apiHint = `<div class="emu-note" id="apiHint"><span>${t('apiOverrideHint')}</span>${api.api === 'vulkan' && !opti ? `<span>${t('apiVulkanHint')}</span>` : ''}</div>`;
+  // Keep the picker available even when automatic detection yields DX10 or an
+  // unsupported renderer. Otherwise the user cannot correct that detection.
+  if (!routes.length) return `<div class="install-options">${apiField}</div>${apiHint}<div class="emu-note">${t('unsupportedRendererHint')}</div>${warning}`;
   return `
     <div class="install-options">
-      ${apis.length > 1 ? `<label><span>${t('fApi')}</span><select id="apiChoice">${apis.map((item) =>
-        `<option value="${esc(item.api)}"${item.api === api.api ? ' selected' : ''}>${esc(item.label)}</option>`).join('')}</select></label>` : ''}
+      ${apiField}
       <label><span>${t('fBackend')}</span><select id="backendChoice" aria-describedby="backendHint">
         <option value="reshade"${opti ? '' : ' selected'}>${t('backendReShade')}</option>
         <option value="optiscaler"${opti ? ' selected' : ''}${optiReason ? ' disabled' : ''}>OptiScaler DLSS-NR</option>
@@ -667,11 +679,12 @@ function installOptions(d, pick, dir) {
         `<option value="${item}"${item === route ? ' selected' : ''}>${t(item === 'feeder' ? 'routeFeeder' : 'routeNative')}</option>`).join('')}</select></label>
       ` : ''}
     </div>
+    ${apiHint}
     <div class="emu-note backend-note" id="backendHint"><span>${t(opti ? 'optiHint' : 'backendHint')}</span>
       ${optiReason ? `<span>${t(optiReason)}</span>` : ''}
       ${route === 'native' ? `<span>${t('nativeEffectsHint')}</span>` : ''}
       ${opti && (api.api === 'vulkan' || api.label === 'DirectX 11') ? `<span>${t('optiBridgeHint')}</span>` : ''}
-      ${api.api === 'vulkan' ? `<span>${t('optiVulkanHint')}</span>` : ''}
+      ${opti && api.api === 'vulkan' ? `<span>${t('optiVulkanHint')}</span>` : ''}
     </div>
     ${pick.installIssue ? `<div class="emu-note compatibility-warning" role="alert">${t(pick.installIssue)}</div>` : ''}
     ${warning}
@@ -706,7 +719,6 @@ async function openSheet(dir, keepLog = false) {
     const installed = d.exes.find((item) => item.rel.toLowerCase() === String(d.installedExe).toLowerCase());
     if (installed) exeChoice.set(dir, installed.path);
   }
-  if (!apiChoice.has(dir) && d.installedApi) apiChoice.set(dir, d.installedApi);
   if (!routeChoice.has(dir) && d.installedRoute) routeChoice.set(dir, d.installedRoute);
 
   const info = art && !art.error && !art.none ? art : null;
@@ -757,7 +769,7 @@ async function openSheet(dir, keepLog = false) {
         `<div class="filerow"><span class="f">${esc(f.rel)}</span><span class="v">${esc(f.version || '—')}</span></div>`).join('')}</div>` : ''}
 
       <div class="sheet-actions">
-        <button class="btn-install" id="doInstall"${d.ok && pick && !pick.installIssue && routesFor(pick, selectedApi(pick, dir).api).length ? '' : ' disabled'}>${installLabel(d, pick, dir)}</button>
+        <button class="btn-install" id="doInstall"${d.ok && pick && !pick.installIssue && routesFor(pick).length ? '' : ' disabled'}>${installLabel(d, pick, dir)}</button>
         <button class="btn-restore" id="doRestore"${d.hasBackup ? '' : ' disabled'}>${t('restore')}</button>
       </div>
       <div class="job-toolbar"><button class="ghost sm" id="copyJob"${jobLines.length ? '' : ' disabled'}>${t('copyLog')}</button></div>
@@ -768,12 +780,23 @@ async function openSheet(dir, keepLog = false) {
   $('copyJob').onclick = () => copyText([sheetGame.name, sheetGame.dir, '', ...jobLines].join('\n'));
   wireExePicker(dir);
   const apiSelect = $('apiChoice');
-  if (apiSelect) apiSelect.onchange = () => { apiChoice.set(dir, apiSelect.value); openSheet(dir); };
+  if (apiSelect) apiSelect.onchange = async () => {
+    const value = apiSelect.value;
+    document.querySelectorAll('#sheet select, #doInstall, #doRestore, #exeSelect').forEach(e => { e.disabled = true; });
+    let result;
+    try { result = await window.lab.setApiOverride(dir, pick.path, value); }
+    catch { result = { ok: false, code: 'errApiSave' }; }
+    if (!result?.ok) jobLog(t(result?.code || 'errApiSave'));
+    if (sheetGame?.dir === dir) {
+      await openSheet(dir, true);
+      $('apiChoice')?.focus();
+    }
+  };
   const routeSelect = $('routeChoice');
   if (routeSelect) routeSelect.onchange = () => { routeChoice.set(dir, routeSelect.value); openSheet(dir, true); };
   const backendSelect = $('backendChoice');
   if (backendSelect) backendSelect.onchange = () => {
-    const available = routesFor(pick, selectedApi(pick, dir).api).filter(route => route !== 'optiscaler');
+    const available = routesFor(pick).filter(route => route !== 'optiscaler');
     const previous = available.includes(d.previousReShadeRoute) ? d.previousReShadeRoute : d.recommendedRoute;
     routeChoice.set(dir, backendSelect.value === 'optiscaler' ? 'optiscaler' : available.includes(previous) ? previous : available[0]);
     openSheet(dir, true);
@@ -798,7 +821,6 @@ function wireExePicker(dir) {
     const option = event.target.closest('.exe-option');
     if (!option) return;
     exeChoice.set(dir, option.dataset.path);
-    apiChoice.delete(dir);
     routeChoice.delete(dir);
     openSheet(dir);
   };
@@ -822,7 +844,7 @@ async function runJob(kind, dir) {
       dir,
       exeChoice.get(dir) || null,
       pick ? selectedRoute(sheetDetails, pick, dir) : null,
-      pick ? selectedApi(pick, dir).api : null
+      pick?.apiOverride || 'auto'
     )
     : await window.lab.restoreGame(dir);
   } catch (error) { res = { ok: false, message: error.message }; }
@@ -893,6 +915,7 @@ function applyLang(code) {
   if (view && view.id === 'view-history') renderHistory();
   if (view && view.id === 'view-settings') renderSettings();
   if (view && view.id === 'view-addons') renderAddons();
+  if (view && view.id === 'view-overlays') window.overlayLab.render();
   if (sheetGame) openSheet(sheetGame.dir, true);
 }
 

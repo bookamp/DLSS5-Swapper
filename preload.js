@@ -2,6 +2,15 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('lab', {
+  // ---- in-game overlay ----
+  overlays: () => ipcRenderer.invoke('overlay-list'),
+  overlayPreferences: () => ipcRenderer.invoke('overlay-preferences'),
+  saveOverlayPreferences: (patch) => ipcRenderer.invoke('overlay-save-preferences', patch),
+  overlayAdd: () => ipcRenderer.invoke('overlay-add'),
+  overlayRemove: (id) => ipcRenderer.invoke('overlay-remove', id),
+  overlayInstall: (id) => ipcRenderer.invoke('overlay-install', id),
+  overlayUninstall: (id) => ipcRenderer.invoke('overlay-uninstall', id),
+  overlaySource: () => ipcRenderer.invoke('overlay-source'),
   boot: () => ipcRenderer.invoke('boot'),
   setLang: (lang) => ipcRenderer.invoke('set-lang', lang),
   setTheme: (theme) => ipcRenderer.invoke('set-theme', theme),
@@ -23,6 +32,8 @@ contextBridge.exposeInMainWorld('lab', {
   hide: (dir) => ipcRenderer.invoke('hide', dir),
   reset: () => ipcRenderer.invoke('reset'),
   open: (dir) => ipcRenderer.invoke('open', dir),
+  openProject: (destination) => ipcRenderer.invoke('open-project', destination),
+  setApiOverride: (dir, exePath, value) => ipcRenderer.invoke('set-api-override', dir, exePath, value),
   artStatus: () => ipcRenderer.invoke('art-status'),
   artFetch: (dir, name, appid) => ipcRenderer.invoke('art-fetch', dir, name, appid),
   touch: (dir) => ipcRenderer.invoke('touch', dir),

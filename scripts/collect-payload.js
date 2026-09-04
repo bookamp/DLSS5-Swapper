@@ -123,11 +123,11 @@ function findReShadeSetup() {
 }
 
 function findHostAddon(sourceDir) {
-  const expected = '9150097cdee2953cdc9894d2e5606ea5100e6c8f95fc7bb1b407328b4391a07a';
+  const expected = 'd5adf82eb44b065f4c590ac91fe824bab07afea0eb9f994bde936710c8593952';
   for (const dir of [sourceDir, path.resolve(ROOT, '..'), ...DEFAULT_SOURCES]) {
     let files = [];
     try { files = fs.readdirSync(dir); } catch { continue; }
-    const name = files.find((file) => /^renodx-dlss5.*v4\.55.*\.addon64(?:\.disabled)?$/i.test(file));
+    const name = files.find((file) => /^renodx-dlss5\.addon64$/i.test(file));
     if (!name) continue;
     const full = path.join(dir, name);
     if (sha256(full) === expected) return full;
@@ -162,7 +162,7 @@ async function collectFeeder(source) {
 
   const hostAddon = findHostAddon(source.dir);
   if (!hostAddon) {
-    throw new Error('The verified RenoDX DLSS5 v4.55 add-on required by the 32-bit host was not found.');
+    throw new Error('The verified RenoDX DLSS5 v4.7 add-on required by Feeder was not found.');
   }
   copyFile(hostAddon, path.join(feeder, 'host64', 'renodx-dlss5.addon64'));
   fs.mkdirSync(path.join(feeder, 'licenses'), { recursive: true });
@@ -171,7 +171,7 @@ async function collectFeeder(source) {
     'VORT shaders b410b9f0c0fbb83c8cb42164aaf1655fab386f4a — https://github.com/vortigern11/vort_Shaders',
     'ReShade headers ee30868391d4ad103db60489820102d8fd40e3c1 — https://github.com/crosire/reshade-shaders',
     'dgVoodoo2 v2.87.4 — downloaded at runtime; not bundled — https://github.com/dege-diosg/dgVoodoo2',
-    'RenoDX DLSS5 add-on v4.55 — https://github.com/clshortfuse/renodx',
+    'RenoDX DLSS5 add-on v4.7 — https://github.com/clshortfuse/renodx',
     ''
   ].join('\r\n'));
 }
@@ -270,6 +270,18 @@ async function extracted(component, folder) {
   return dest;
 }
 console.log(`  (${extras} optional add-on build${extras === 1 ? '' : 's'} bundled)`);
+
+// The in-game overlay's native add-on, built by scripts/build-overlay.ps1.
+// Staged like the payload so electron-builder ships it as resources/overlay.
+const OVERLAY_BIN = path.join(ROOT, 'overlay-bin');
+fs.rmSync(OVERLAY_BIN, { recursive: true, force: true });
+const overlayBuilds = [
+  path.join(ROOT, 'dist', 'overlay', 'dlss5-lab-overlay.addon64'),
+  path.join(ROOT, '..', 'lab', 'dist', 'overlay', 'dlss5-lab-overlay.addon64')
+];
+const overlayBuild = overlayBuilds.find((f) => fs.existsSync(f));
+if (overlayBuild) copyFile(overlayBuild, path.join(OVERLAY_BIN, 'dlss5-lab-overlay.addon64'));
+else console.warn('  ! overlay add-on not built - the Overlay page will offer no built-in entry');
 
 const reshade = findReShadeSetup();
 if (!reshade) {

@@ -5,6 +5,7 @@ const add = window.i18n.add;
 
 add({ code: 'zh-TW', label: 'Chinese (Traditional)', native: '繁體中文', dir: 'ltr' }, {
   navHome: '首頁', navGames: '遊戲', navHistory: '紀錄', navSettings: '設定', navAbout: '關於',
+    navOverlay: '疊加層',
   ready: '就緒', scanning: '掃描中…', fetchingArt: '取得封面…',
   dropTitle: '將遊戲資料夾拖到這裡', or: '或', browse: '瀏覽資料夾',
   recentTitle: '最近的遊戲', viewAll: '檢視全部', recentEmpty: '尚未安裝 — 為遊戲安裝 DLSS 5 後會顯示在這裡。',
@@ -35,6 +36,7 @@ add({ code: 'zh-TW', label: 'Chinese (Traditional)', native: '繁體中文', dir
 
 add({ code: 'uk', label: 'Ukrainian', native: 'Українська', dir: 'ltr' }, {
   navHome: 'Головна', navGames: 'Ігри', navHistory: 'Історія', navSettings: 'Налаштування', navAbout: 'Про програму',
+    navOverlay: 'Оверлей',
   ready: 'Готово', scanning: 'Сканування…', fetchingArt: 'Завантаження обкладинок…',
   dropTitle: 'Перетягніть теку гри сюди', or: 'або', browse: 'Обрати теку',
   recentTitle: 'Останні ігри', viewAll: 'Показати всі', recentEmpty: 'Ще нічого не встановлено — встановіть DLSS 5 у грі, і вона з’явиться тут.',
@@ -65,6 +67,7 @@ add({ code: 'uk', label: 'Ukrainian', native: 'Українська', dir: 'ltr'
 
 add({ code: 'nl', label: 'Dutch', native: 'Nederlands', dir: 'ltr' }, {
   navHome: 'Start', navGames: 'Games', navHistory: 'Geschiedenis', navSettings: 'Instellingen', navAbout: 'Over',
+    navOverlay: 'Overlay',
   ready: 'Klaar', scanning: 'Scannen…', fetchingArt: 'Covers ophalen…',
   dropTitle: 'Sleep de gamemap hierheen', or: 'of', browse: 'Map kiezen',
   recentTitle: 'Recente games', viewAll: 'Alles tonen', recentEmpty: 'Nog niets geïnstalleerd — installeer DLSS 5 in een game en die verschijnt hier.',
@@ -95,6 +98,7 @@ add({ code: 'nl', label: 'Dutch', native: 'Nederlands', dir: 'ltr' }, {
 
 add({ code: 'cs', label: 'Czech', native: 'Čeština', dir: 'ltr' }, {
   navHome: 'Domů', navGames: 'Hry', navHistory: 'Historie', navSettings: 'Nastavení', navAbout: 'O programu',
+    navOverlay: 'Překryv',
   ready: 'Připraveno', scanning: 'Prohledávání…', fetchingArt: 'Načítání obalů…',
   dropTitle: 'Přetáhněte sem složku hry', or: 'nebo', browse: 'Vybrat složku',
   recentTitle: 'Nedávné hry', viewAll: 'Zobrazit vše', recentEmpty: 'Zatím nic nenainstalováno — nainstalujte DLSS 5 do hry a objeví se zde.',
@@ -125,6 +129,7 @@ add({ code: 'cs', label: 'Czech', native: 'Čeština', dir: 'ltr' }, {
 
 add({ code: 'hu', label: 'Hungarian', native: 'Magyar', dir: 'ltr' }, {
   navHome: 'Kezdőlap', navGames: 'Játékok', navHistory: 'Előzmények', navSettings: 'Beállítások', navAbout: 'Névjegy',
+    navOverlay: 'Átfedés',
   ready: 'Kész', scanning: 'Vizsgálat…', fetchingArt: 'Borítók letöltése…',
   dropTitle: 'Húzd ide a játék mappáját', or: 'vagy', browse: 'Mappa tallózása',
   recentTitle: 'Legutóbbi játékok', viewAll: 'Összes megtekintése', recentEmpty: 'Még nincs telepítés — telepítsd a DLSS 5-öt egy játékba, és itt megjelenik.',
@@ -155,6 +160,7 @@ add({ code: 'hu', label: 'Hungarian', native: 'Magyar', dir: 'ltr' }, {
 
 add({ code: 'ro', label: 'Romanian', native: 'Română', dir: 'ltr' }, {
   navHome: 'Acasă', navGames: 'Jocuri', navHistory: 'Istoric', navSettings: 'Setări', navAbout: 'Despre',
+    navOverlay: 'Suprapunere',
   ready: 'Gata', scanning: 'Se scanează…', fetchingArt: 'Se aduc coperțile…',
   dropTitle: 'Trage aici folderul jocului', or: 'sau', browse: 'Alege folder',
   recentTitle: 'Jocuri recente', viewAll: 'Vezi tot', recentEmpty: 'Nimic instalat încă — instalează DLSS 5 într-un joc și va apărea aici.',
@@ -185,6 +191,7 @@ add({ code: 'ro', label: 'Romanian', native: 'Română', dir: 'ltr' }, {
 
 add({ code: 'el', label: 'Greek', native: 'Ελληνικά', dir: 'ltr' }, {
   navHome: 'Αρχική', navGames: 'Παιχνίδια', navHistory: 'Ιστορικό', navSettings: 'Ρυθμίσεις', navAbout: 'Σχετικά',
+    navOverlay: 'Επικάλυψη',
   ready: 'Έτοιμο', scanning: 'Σάρωση…', fetchingArt: 'Λήψη εξωφύλλων…',
   dropTitle: 'Σύρετε εδώ τον φάκελο του παιχνιδιού', or: 'ή', browse: 'Επιλογή φακέλου',
   recentTitle: 'Πρόσφατα παιχνίδια', viewAll: 'Προβολή όλων', recentEmpty: 'Δεν έχει εγκατασταθεί τίποτα ακόμη — εγκαταστήστε το DLSS 5 σε ένα παιχνίδι.',
@@ -215,6 +222,7 @@ add({ code: 'el', label: 'Greek', native: 'Ελληνικά', dir: 'ltr' }, {
 
 add({ code: 'sv', label: 'Swedish', native: 'Svenska', dir: 'ltr' }, {
   navHome: 'Hem', navGames: 'Spel', navHistory: 'Historik', navSettings: 'Inställningar', navAbout: 'Om',
+    navOverlay: 'Överlägg',
   ready: 'Klar', scanning: 'Söker…', fetchingArt: 'Hämtar omslag…',
   dropTitle: 'Släpp spelmappen här', or: 'eller', browse: 'Välj mapp',
   recentTitle: 'Senaste spel', viewAll: 'Visa alla', recentEmpty: 'Inget installerat ännu — installera DLSS 5 i ett spel så dyker det upp här.',
@@ -245,6 +253,7 @@ add({ code: 'sv', label: 'Swedish', native: 'Svenska', dir: 'ltr' }, {
 
 add({ code: 'da', label: 'Danish', native: 'Dansk', dir: 'ltr' }, {
   navHome: 'Hjem', navGames: 'Spil', navHistory: 'Historik', navSettings: 'Indstillinger', navAbout: 'Om',
+    navOverlay: 'Overlay',
   ready: 'Klar', scanning: 'Scanner…', fetchingArt: 'Henter covers…',
   dropTitle: 'Slip spilmappen her', or: 'eller', browse: 'Vælg mappe',
   recentTitle: 'Seneste spil', viewAll: 'Vis alle', recentEmpty: 'Intet installeret endnu — installer DLSS 5 i et spil, så vises det her.',
@@ -275,6 +284,7 @@ add({ code: 'da', label: 'Danish', native: 'Dansk', dir: 'ltr' }, {
 
 add({ code: 'nb', label: 'Norwegian', native: 'Norsk', dir: 'ltr' }, {
   navHome: 'Hjem', navGames: 'Spill', navHistory: 'Historikk', navSettings: 'Innstillinger', navAbout: 'Om',
+    navOverlay: 'Overlegg',
   ready: 'Klar', scanning: 'Skanner…', fetchingArt: 'Henter omslag…',
   dropTitle: 'Slipp spillmappen her', or: 'eller', browse: 'Velg mappe',
   recentTitle: 'Nylige spill', viewAll: 'Vis alle', recentEmpty: 'Ingenting installert ennå — installer DLSS 5 i et spill, så dukker det opp her.',
@@ -305,6 +315,7 @@ add({ code: 'nb', label: 'Norwegian', native: 'Norsk', dir: 'ltr' }, {
 
 add({ code: 'fi', label: 'Finnish', native: 'Suomi', dir: 'ltr' }, {
   navHome: 'Etusivu', navGames: 'Pelit', navHistory: 'Historia', navSettings: 'Asetukset', navAbout: 'Tietoja',
+    navOverlay: 'Peittokuva',
   ready: 'Valmis', scanning: 'Tarkistetaan…', fetchingArt: 'Haetaan kansikuvia…',
   dropTitle: 'Pudota pelikansio tähän', or: 'tai', browse: 'Valitse kansio',
   recentTitle: 'Viimeisimmät pelit', viewAll: 'Näytä kaikki', recentEmpty: 'Mitään ei ole vielä asennettu — asenna DLSS 5 peliin, niin se näkyy tässä.',
@@ -335,6 +346,7 @@ add({ code: 'fi', label: 'Finnish', native: 'Suomi', dir: 'ltr' }, {
 
 add({ code: 'th', label: 'Thai', native: 'ไทย', dir: 'ltr' }, {
   navHome: 'หน้าแรก', navGames: 'เกม', navHistory: 'ประวัติ', navSettings: 'การตั้งค่า', navAbout: 'เกี่ยวกับ',
+    navOverlay: 'โอเวอร์เลย์',
   ready: 'พร้อม', scanning: 'กำลังสแกน…', fetchingArt: 'กำลังดึงภาพปก…',
   dropTitle: 'วางโฟลเดอร์เกมที่นี่', or: 'หรือ', browse: 'เลือกโฟลเดอร์',
   recentTitle: 'เกมล่าสุด', viewAll: 'ดูทั้งหมด', recentEmpty: 'ยังไม่ได้ติดตั้ง — ติดตั้ง DLSS 5 ในเกมแล้วจะแสดงที่นี่',
@@ -365,6 +377,7 @@ add({ code: 'th', label: 'Thai', native: 'ไทย', dir: 'ltr' }, {
 
 add({ code: 'vi', label: 'Vietnamese', native: 'Tiếng Việt', dir: 'ltr' }, {
   navHome: 'Trang chủ', navGames: 'Trò chơi', navHistory: 'Lịch sử', navSettings: 'Cài đặt', navAbout: 'Giới thiệu',
+    navOverlay: 'Lớp phủ',
   ready: 'Sẵn sàng', scanning: 'Đang quét…', fetchingArt: 'Đang tải ảnh bìa…',
   dropTitle: 'Thả thư mục trò chơi vào đây', or: 'hoặc', browse: 'Chọn thư mục',
   recentTitle: 'Trò chơi gần đây', viewAll: 'Xem tất cả', recentEmpty: 'Chưa cài đặt gì — hãy cài DLSS 5 cho một trò chơi và nó sẽ hiện ở đây.',
@@ -395,6 +408,7 @@ add({ code: 'vi', label: 'Vietnamese', native: 'Tiếng Việt', dir: 'ltr' }, {
 
 add({ code: 'id', label: 'Indonesian', native: 'Bahasa Indonesia', dir: 'ltr' }, {
   navHome: 'Beranda', navGames: 'Gim', navHistory: 'Riwayat', navSettings: 'Pengaturan', navAbout: 'Tentang',
+    navOverlay: 'Hamparan',
   ready: 'Siap', scanning: 'Memindai…', fetchingArt: 'Mengambil sampul…',
   dropTitle: 'Letakkan folder gim di sini', or: 'atau', browse: 'Pilih folder',
   recentTitle: 'Gim terbaru', viewAll: 'Lihat semua', recentEmpty: 'Belum ada yang dipasang — pasang DLSS 5 pada sebuah gim dan akan muncul di sini.',
@@ -425,6 +439,7 @@ add({ code: 'id', label: 'Indonesian', native: 'Bahasa Indonesia', dir: 'ltr' },
 
 add({ code: 'ms', label: 'Malay', native: 'Bahasa Melayu', dir: 'ltr' }, {
   navHome: 'Utama', navGames: 'Permainan', navHistory: 'Sejarah', navSettings: 'Tetapan', navAbout: 'Perihal',
+    navOverlay: 'Tindanan',
   ready: 'Sedia', scanning: 'Mengimbas…', fetchingArt: 'Mendapatkan kulit…',
   dropTitle: 'Lepaskan folder permainan di sini', or: 'atau', browse: 'Pilih folder',
   recentTitle: 'Permainan terkini', viewAll: 'Lihat semua', recentEmpty: 'Belum ada pemasangan — pasang DLSS 5 pada permainan dan ia akan muncul di sini.',
@@ -455,6 +470,7 @@ add({ code: 'ms', label: 'Malay', native: 'Bahasa Melayu', dir: 'ltr' }, {
 
 add({ code: 'fil', label: 'Filipino', native: 'Filipino', dir: 'ltr' }, {
   navHome: 'Home', navGames: 'Mga laro', navHistory: 'Kasaysayan', navSettings: 'Mga setting', navAbout: 'Tungkol',
+    navOverlay: 'Overlay',
   ready: 'Handa', scanning: 'Sinusuri…', fetchingArt: 'Kinukuha ang mga cover…',
   dropTitle: 'I-drop dito ang folder ng laro', or: 'o', browse: 'Pumili ng folder',
   recentTitle: 'Mga kamakailang laro', viewAll: 'Tingnan lahat', recentEmpty: 'Wala pang naka-install — mag-install ng DLSS 5 sa isang laro at lilitaw ito rito.',
@@ -485,6 +501,7 @@ add({ code: 'fil', label: 'Filipino', native: 'Filipino', dir: 'ltr' }, {
 
 add({ code: 'hi', label: 'Hindi', native: 'हिन्दी', dir: 'ltr' }, {
   navHome: 'होम', navGames: 'गेम', navHistory: 'इतिहास', navSettings: 'सेटिंग्स', navAbout: 'परिचय',
+    navOverlay: 'ओवरले',
   ready: 'तैयार', scanning: 'स्कैन हो रहा है…', fetchingArt: 'कवर लाए जा रहे हैं…',
   dropTitle: 'गेम फ़ोल्डर यहाँ छोड़ें', or: 'या', browse: 'फ़ोल्डर चुनें',
   recentTitle: 'हाल के गेम', viewAll: 'सभी देखें', recentEmpty: 'अभी कुछ इंस्टॉल नहीं हुआ — किसी गेम में DLSS 5 इंस्टॉल करें, वह यहाँ दिखेगा।',
@@ -515,6 +532,7 @@ add({ code: 'hi', label: 'Hindi', native: 'हिन्दी', dir: 'ltr' }, {
 
 add({ code: 'bn', label: 'Bengali', native: 'বাংলা', dir: 'ltr' }, {
   navHome: 'হোম', navGames: 'গেম', navHistory: 'ইতিহাস', navSettings: 'সেটিংস', navAbout: 'সম্পর্কে',
+    navOverlay: 'ওভারলে',
   ready: 'প্রস্তুত', scanning: 'স্ক্যান করা হচ্ছে…', fetchingArt: 'কভার আনা হচ্ছে…',
   dropTitle: 'গেম ফোল্ডার এখানে ছাড়ুন', or: 'অথবা', browse: 'ফোল্ডার বাছুন',
   recentTitle: 'সাম্প্রতিক গেম', viewAll: 'সব দেখুন', recentEmpty: 'এখনো কিছু ইনস্টল হয়নি — কোনো গেমে DLSS 5 ইনস্টল করুন, এখানে দেখা যাবে।',
@@ -545,6 +563,7 @@ add({ code: 'bn', label: 'Bengali', native: 'বাংলা', dir: 'ltr' }, {
 
 add({ code: 'fa', label: 'Persian', native: 'فارسی', dir: 'rtl' }, {
   navHome: 'خانه', navGames: 'بازی‌ها', navHistory: 'تاریخچه', navSettings: 'تنظیمات', navAbout: 'درباره',
+    navOverlay: 'روکش',
   ready: 'آماده', scanning: 'در حال بررسی…', fetchingArt: 'دریافت تصاویر…',
   dropTitle: 'پوشهٔ بازی را اینجا رها کنید', or: 'یا', browse: 'انتخاب پوشه',
   recentTitle: 'بازی‌های اخیر', viewAll: 'نمایش همه', recentEmpty: 'هنوز چیزی نصب نشده — DLSS 5 را روی یک بازی نصب کنید تا اینجا دیده شود.',
@@ -575,6 +594,7 @@ add({ code: 'fa', label: 'Persian', native: 'فارسی', dir: 'rtl' }, {
 
 add({ code: 'ur', label: 'Urdu', native: 'اردو', dir: 'rtl' }, {
   navHome: 'ہوم', navGames: 'گیمز', navHistory: 'تاریخ', navSettings: 'ترتیبات', navAbout: 'تعارف',
+    navOverlay: 'اوورلے',
   ready: 'تیار', scanning: 'اسکین ہو رہا ہے…', fetchingArt: 'تصاویر لائی جا رہی ہیں…',
   dropTitle: 'گیم فولڈر یہاں چھوڑیں', or: 'یا', browse: 'فولڈر منتخب کریں',
   recentTitle: 'حالیہ گیمز', viewAll: 'سب دیکھیں', recentEmpty: 'ابھی کچھ انسٹال نہیں — کسی گیم میں DLSS 5 انسٹال کریں، یہاں نظر آئے گا۔',
@@ -605,6 +625,7 @@ add({ code: 'ur', label: 'Urdu', native: 'اردو', dir: 'rtl' }, {
 
 add({ code: 'bg', label: 'Bulgarian', native: 'Български', dir: 'ltr' }, {
   navHome: 'Начало', navGames: 'Игри', navHistory: 'История', navSettings: 'Настройки', navAbout: 'Относно',
+    navOverlay: 'Наслагване',
   ready: 'Готово', scanning: 'Сканиране…', fetchingArt: 'Изтегляне на корици…',
   dropTitle: 'Пуснете папката на играта тук', or: 'или', browse: 'Избор на папка',
   recentTitle: 'Скорошни игри', viewAll: 'Виж всички', recentEmpty: 'Още нищо не е инсталирано — инсталирайте DLSS 5 в игра и тя ще се появи тук.',
@@ -635,6 +656,7 @@ add({ code: 'bg', label: 'Bulgarian', native: 'Български', dir: 'ltr' }
 
 add({ code: 'sr', label: 'Serbian', native: 'Српски', dir: 'ltr' }, {
   navHome: 'Почетна', navGames: 'Игре', navHistory: 'Историја', navSettings: 'Подешавања', navAbout: 'О програму',
+    navOverlay: 'Преклоп',
   ready: 'Спремно', scanning: 'Скенирање…', fetchingArt: 'Преузимање омота…',
   dropTitle: 'Превуците фасциклу игре овде', or: 'или', browse: 'Изабери фасциклу',
   recentTitle: 'Недавне игре', viewAll: 'Прикажи све', recentEmpty: 'Још ништа није инсталирано — инсталирајте DLSS 5 у игру и појавиће се овде.',
@@ -665,6 +687,7 @@ add({ code: 'sr', label: 'Serbian', native: 'Српски', dir: 'ltr' }, {
 
 add({ code: 'hr', label: 'Croatian', native: 'Hrvatski', dir: 'ltr' }, {
   navHome: 'Početna', navGames: 'Igre', navHistory: 'Povijest', navSettings: 'Postavke', navAbout: 'O programu',
+    navOverlay: 'Preklop',
   ready: 'Spremno', scanning: 'Pretraživanje…', fetchingArt: 'Dohvaćanje omota…',
   dropTitle: 'Ispustite mapu igre ovdje', or: 'ili', browse: 'Odaberi mapu',
   recentTitle: 'Nedavne igre', viewAll: 'Prikaži sve', recentEmpty: 'Još ništa nije instalirano — instalirajte DLSS 5 u igru i pojavit će se ovdje.',
@@ -695,6 +718,7 @@ add({ code: 'hr', label: 'Croatian', native: 'Hrvatski', dir: 'ltr' }, {
 
 add({ code: 'sk', label: 'Slovak', native: 'Slovenčina', dir: 'ltr' }, {
   navHome: 'Domov', navGames: 'Hry', navHistory: 'História', navSettings: 'Nastavenia', navAbout: 'O programe',
+    navOverlay: 'Prekrytie',
   ready: 'Pripravené', scanning: 'Prehľadáva sa…', fetchingArt: 'Načítavanie obalov…',
   dropTitle: 'Sem presuňte priečinok hry', or: 'alebo', browse: 'Vybrať priečinok',
   recentTitle: 'Nedávne hry', viewAll: 'Zobraziť všetko', recentEmpty: 'Zatiaľ nič nainštalované — nainštalujte DLSS 5 do hry a objaví sa tu.',
@@ -725,6 +749,7 @@ add({ code: 'sk', label: 'Slovak', native: 'Slovenčina', dir: 'ltr' }, {
 
 add({ code: 'ca', label: 'Catalan', native: 'Català', dir: 'ltr' }, {
   navHome: 'Inici', navGames: 'Jocs', navHistory: 'Historial', navSettings: 'Configuració', navAbout: 'Quant a',
+    navOverlay: 'Superposició',
   ready: 'A punt', scanning: 'S’està analitzant…', fetchingArt: 'S’obtenen les caràtules…',
   dropTitle: 'Deixa aquí la carpeta del joc', or: 'o', browse: 'Tria una carpeta',
   recentTitle: 'Jocs recents', viewAll: 'Mostra-ho tot', recentEmpty: 'Encara no hi ha res instal·lat — instal·la DLSS 5 en un joc i apareixerà aquí.',

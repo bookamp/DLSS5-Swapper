@@ -1,6 +1,6 @@
 {
   "name": "dlss5-swapper",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "DLSS 5 (Neural Rendering) for your games - a library that finds them, and one click to install",
   "main": "main.js",
   "scripts": {
@@ -14,7 +14,9 @@
     "build": "electron-builder --win",
     "build:linux": "electron-builder --linux AppImage deb",
     "icon": "electron scripts/make-icon.js",
-    "build:portable": "electron-builder --win portable"
+    "build:portable": "electron-builder --win portable",
+    "overlay:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-overlay.ps1",
+    "overlay:prepare": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-overlay.ps1"
   },
   "author": "Rakan Alkhaldi",
   "license": "MIT",
@@ -31,6 +33,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "overlay-preload.js",
       "THIRD_PARTY_NOTICES.md",
       "src/**/*",
       "assets/**/*",
@@ -50,6 +53,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "overlay-bin",
+        "to": "overlay",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
@@ -60,7 +70,10 @@
       "icon": "build/icon.ico"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Game",
       "maintainer": "Rakan Alkhaldi",
       "icon": "app_iocn.png",

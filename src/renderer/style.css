@@ -427,6 +427,9 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .setting-switch:disabled { cursor: wait; opacity: .6; }
 .about p { font-size: 13.5px; line-height: 1.9; }
 .about .dim { color: var(--dim); }
+.about-links { display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0; }
+.about-links a { text-decoration: none; }
+.about-links a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 /* ---------------- game sheet ---------------- */
 .overlay {
@@ -736,6 +739,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 
 .install-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
 .install-options label { display: grid; gap: 6px; font-size: 10.5px; color: var(--dim); }
+.install-options .api-field { grid-column: 1 / -1; }
 .install-options select {
   width: 100%; padding: 11px 12px; border-radius: 11px;
   border: 1px solid var(--stroke); background: var(--panel-2); color: var(--text);

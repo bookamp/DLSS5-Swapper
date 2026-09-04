@@ -43,6 +43,13 @@ function assertSafeTarget(gameDir, exePath) {
 function assertAntiCheatConsent(gameDir, exePath, acknowledged) {
   if (hasAntiCheat(gameDir, exePath) && acknowledged !== true) throw problem('errAntiCheatConsent');
 }
+function isVulkanWrapper(file, bitness) {
+  if (pe.getBitness(file) !== bitness || pe.versionMentions(file, 'ReShade')) return false;
+  if (pe.versionMentions(file, 'DXVK') || pe.versionMentions(file, 'vkd3d')) return true;
+  const markers = pe.findMarkers(file, ['DXVK', 'vkd3d', 'vkGetInstanceProcAddr', 'ReShade']);
+  return !markers.has('ReShade') && markers.has('vkGetInstanceProcAddr') &&
+    (markers.has('DXVK') || markers.has('vkd3d'));
+}
 function assertLoaderCompatible(config, manifest) {
   const { gameDir, exePath, api, bitness, route } = config;
   const dir = path.dirname(exePath);
@@ -58,11 +65,15 @@ function assertLoaderCompatible(config, manifest) {
     throw problem('errLoaderConflict', reshade.file);
   }
   for (const name of fs.readdirSync(dir)) {
-    if (!/^(dxgi|d3d8|d3d9|d3d10|d3d11|d3d12|opengl32)\.dll$/i.test(name)) continue;
+    if (!/^(dxgi|d3d8|d3d9|d3d10|d3d10core|d3d11|d3d12|opengl32)\.dll$/i.test(name)) continue;
     const file = safePath(gameDir, path.relative(gameDir, path.join(dir, name)));
     if (pe.versionMentions(file, 'ReShade') && ++reshadeHooks > 1) throw problem('errLoaderConflict', 'Multiple ReShade hooks: ' + dir);
     const key = path.relative(gameDir, file).replace(/\\/g, '/').toLowerCase();
     if (owned.has(key)) continue;
+    // A Vulkan translation layer deliberately retains DirectX DLL names.
+    // ReShade's Vulkan route does not replace these files. Recognize the
+    // wrapper's contents, not just its name; unrelated injectors stay blocked.
+    if (api === 'vulkan' && route === 'feeder' && isVulkanWrapper(file, bitness)) continue;
     // Reuse one compatible add-on ReShade for native mode. Feeder can update
     // the expected hook in place, but not a different hook that would remain
     // loaded alongside it (e.g. a D3D9 ReShade before the DX11 wrapper).

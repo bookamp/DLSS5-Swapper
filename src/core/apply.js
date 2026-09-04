@@ -421,6 +421,7 @@ async function applyFeeder(config, log) {
   const manifest = beginManifest(gameDir, exePath, api);
   manifest.route = 'feeder';
   manifest.game.bitness = bitness;
+  manifest.game.apiLabel = config.apiLabel;
   manifest.game.emulator = emulator || null;
   const payloadByName = new Map(source.payload.map((file) => [file.name.toLowerCase(), file]));
   const neural = payloadByName.get('nvngx_dlssnr.dll');
@@ -598,6 +599,7 @@ async function applySwap(config, onLog) {
   const scan = await scanGame(gameDir);
   const manifest = beginManifest(gameDir, exePath, api);
   manifest.route = 'native';
+  manifest.game.apiLabel = config.apiLabel;
   const setup = setupRunner || runSetup;
 
   const payloadByName = new Map(source.payload.map((f) => [f.name.toLowerCase(), f]));

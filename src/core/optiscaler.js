@@ -109,6 +109,7 @@ async function install(config, log) {
   const manifest = beginManifest(gameDir, exePath, api);
   manifest.route = 'optiscaler';
   manifest.game.bitness = 64;
+  manifest.game.apiLabel = config.apiLabel;
   manifest.optiscaler = { version: RELEASE.version, hook: hookFor(api) };
   const exeDir = path.dirname(exePath);
   for (const item of copyPlan(optiRoot, api)) {

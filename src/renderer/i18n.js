@@ -53,6 +53,7 @@ const S = {
     optiDownloading: 'Downloading and verifying OptiScaler…', optiVerified: 'Official OptiScaler release verified.',
     backendSwitching: 'Saving settings and switching backend…', backendRecovered: 'Interrupted switch recovered.',
     navHome: 'Home', navGames: 'Games', navHistory: 'History', navSettings: 'Settings', navAbout: 'About',
+    navOverlay: 'Overlay',
     ready: 'Ready', scanning: 'Scanning…', fetchingArt: 'Fetching art…',
     unsupportedRendererHint: 'Native DirectX 10 is not supported by Feeder. Select the game’s DirectX 11 mode if available. This renderer cannot be installed automatically.',
     legacyRendererHint: 'DX8/9 requires dgVoodoo2 → DirectX 11. The matching wrapper is downloaded from its official source on first install. Disable MSAA/SSAA in the game if depth is unavailable.',
@@ -73,6 +74,7 @@ const S = {
     copyFailed: 'Could not copy. Select the text and press Ctrl+C, or try again.',
     historySnapshot: 'Backup record', historyRecovered: 'Interrupted operation recovered',
     historyLoadFailed: 'Could not load history. Reopen this page to try again.',
+    overlaySkipped: (params) => `The in-game overlay was skipped: ${params.error}. DLSS was installed normally.`,
     historySaveWarning: 'History could not be read or saved completely. Available entries are shown; copy them before closing the app and check access to the app data folder.',
     gamesTitle: 'Games', addGame: 'Add a game', addFolder: 'Add a folder', rescan: 'Rescan',
     searchGames: 'Search games', searchGamesHint: 'Search by game title…',
@@ -140,6 +142,7 @@ const S = {
     optiDownloading: 'جارٍ تنزيل OptiScaler والتحقق منه…', optiVerified: 'تم التحقق من إصدار OptiScaler الرسمي.',
     backendSwitching: 'جارٍ حفظ الإعدادات وتبديل المسار…', backendRecovered: 'تم استرداد التبديل المنقطع.',
     navHome: 'الرئيسية', navGames: 'الألعاب', navHistory: 'السجل', navSettings: 'الإعدادات', navAbout: 'عن البرنامج',
+    navOverlay: 'الأوفرلاي',
     ready: 'جاهز', scanning: 'جارٍ الفحص…', fetchingArt: 'جلب الصور…',
     unsupportedRendererHint: 'Feeder لا يدعم DirectX 10 مباشرة. اختر وضع DirectX 11 داخل اللعبة إن توفر؛ لا يمكن التثبيت تلقائياً على واجهة الرسوم هذه.',
     legacyRendererHint: 'DX8/9 يحتاج تحويل dgVoodoo2 إلى DirectX 11. يُنزّل الملف المطابق من المصدر الرسمي عند أول تثبيت. أوقف MSAA/SSAA داخل اللعبة إذا لم يظهر العمق.',
@@ -160,6 +163,7 @@ const S = {
     copyFailed: 'تعذّر النسخ. حدّد النص واضغط Ctrl+C، أو حاول مرة أخرى.',
     historySnapshot: 'سجل نسخة احتياطية', historyRecovered: 'استعادة عملية متوقفة',
     historyLoadFailed: 'تعذّر تحميل الهستري. أعد فتح الصفحة للمحاولة مرة أخرى.',
+    overlaySkipped: (params) => `تُخطّي الأوفرلاي داخل اللعبة: ${params.error}. وDLSS رُكّب كالمعتاد.`,
     historySaveWarning: 'تعذّرت قراءة أو حفظ الهستري بالكامل. السجلات المتاحة ظاهرة؛ انسخها قبل إغلاق البرنامج وتحقّق من صلاحيات مجلد بيانات التطبيق.',
     gamesTitle: 'الألعاب', addGame: 'أضف لعبة', addFolder: 'أضف مجلداً', rescan: 'إعادة فحص',
     searchGames: 'البحث عن لعبة', searchGamesHint: 'ابحث باسم اللعبة…',
@@ -197,6 +201,7 @@ const S = {
   },
   zh: {
     navHome: '主页', navGames: '游戏', navHistory: '历史', navSettings: '设置', navAbout: '关于',
+    navOverlay: '叠加层',
     ready: '就绪', scanning: '扫描中…', fetchingArt: '获取封面…',
     dropTitle: '将游戏文件夹拖到这里', or: '或', browse: '浏览文件夹',
     recentTitle: '最近的游戏', viewAll: '查看全部', recentEmpty: '尚未安装 — 为游戏安装 DLSS 5 后会显示在这里。',
@@ -226,6 +231,7 @@ const S = {
   },
   es: {
     navHome: 'Inicio', navGames: 'Juegos', navHistory: 'Historial', navSettings: 'Ajustes', navAbout: 'Acerca de',
+    navOverlay: 'Superposición',
     ready: 'Listo', scanning: 'Analizando…', fetchingArt: 'Obteniendo carátulas…',
     dropTitle: 'Suelta aquí la carpeta del juego', or: 'o', browse: 'Buscar carpeta',
     recentTitle: 'Juegos recientes', viewAll: 'Ver todo', recentEmpty: 'Nada instalado todavía: instala DLSS 5 en un juego y aparecerá aquí.',
@@ -255,6 +261,7 @@ const S = {
   },
   pt: {
     navHome: 'Início', navGames: 'Jogos', navHistory: 'Histórico', navSettings: 'Configurações', navAbout: 'Sobre',
+    navOverlay: 'Sobreposição',
     ready: 'Pronto', scanning: 'Analisando…', fetchingArt: 'Buscando capas…',
     dropTitle: 'Solte a pasta do jogo aqui', or: 'ou', browse: 'Procurar pasta',
     recentTitle: 'Jogos recentes', viewAll: 'Ver tudo', recentEmpty: 'Nada instalado ainda — instale o DLSS 5 em um jogo e ele aparece aqui.',
@@ -284,6 +291,7 @@ const S = {
   },
   ru: {
     navHome: 'Главная', navGames: 'Игры', navHistory: 'История', navSettings: 'Настройки', navAbout: 'О программе',
+    navOverlay: 'Оверлей',
     ready: 'Готово', scanning: 'Сканирование…', fetchingArt: 'Загрузка обложек…',
     dropTitle: 'Перетащите папку игры сюда', or: 'или', browse: 'Выбрать папку',
     recentTitle: 'Недавние игры', viewAll: 'Показать все', recentEmpty: 'Пока ничего не установлено — установите DLSS 5 в игру, и она появится здесь.',
@@ -313,6 +321,7 @@ const S = {
   },
   de: {
     navHome: 'Start', navGames: 'Spiele', navHistory: 'Verlauf', navSettings: 'Einstellungen', navAbout: 'Über',
+    navOverlay: 'Overlay',
     ready: 'Bereit', scanning: 'Wird geprüft…', fetchingArt: 'Cover werden geladen…',
     dropTitle: 'Spielordner hierher ziehen', or: 'oder', browse: 'Ordner wählen',
     recentTitle: 'Zuletzt bearbeitet', viewAll: 'Alle anzeigen', recentEmpty: 'Noch nichts installiert — installiere DLSS 5 in einem Spiel, dann erscheint es hier.',
@@ -342,6 +351,7 @@ const S = {
   },
   fr: {
     navHome: 'Accueil', navGames: 'Jeux', navHistory: 'Historique', navSettings: 'Paramètres', navAbout: 'À propos',
+    navOverlay: 'Superposition',
     ready: 'Prêt', scanning: 'Analyse…', fetchingArt: 'Récupération des jaquettes…',
     dropTitle: 'Déposez le dossier du jeu ici', or: 'ou', browse: 'Parcourir',
     recentTitle: 'Jeux récents', viewAll: 'Tout voir', recentEmpty: 'Rien d’installé pour l’instant — installez DLSS 5 dans un jeu et il apparaîtra ici.',
@@ -371,6 +381,7 @@ const S = {
   },
   ja: {
     navHome: 'ホーム', navGames: 'ゲーム', navHistory: '履歴', navSettings: '設定', navAbout: '情報',
+    navOverlay: 'オーバーレイ',
     ready: '準備完了', scanning: 'スキャン中…', fetchingArt: '画像を取得中…',
     dropTitle: 'ゲームフォルダーをここにドロップ', or: 'または', browse: 'フォルダーを選択',
     recentTitle: '最近のゲーム', viewAll: 'すべて表示', recentEmpty: 'まだ何もインストールしていません。ゲームに DLSS 5 を入れるとここに表示されます。',
@@ -400,6 +411,7 @@ const S = {
   },
   ko: {
     navHome: '홈', navGames: '게임', navHistory: '기록', navSettings: '설정', navAbout: '정보',
+    navOverlay: '오버레이',
     ready: '준비됨', scanning: '검사 중…', fetchingArt: '이미지 가져오는 중…',
     dropTitle: '게임 폴더를 여기에 놓으세요', or: '또는', browse: '폴더 찾기',
     recentTitle: '최근 게임', viewAll: '전체 보기', recentEmpty: '아직 설치한 게임이 없습니다. DLSS 5를 설치하면 여기에 표시됩니다.',
@@ -429,6 +441,7 @@ const S = {
   },
   it: {
     navHome: 'Home', navGames: 'Giochi', navHistory: 'Cronologia', navSettings: 'Impostazioni', navAbout: 'Informazioni',
+    navOverlay: 'Overlay',
     ready: 'Pronto', scanning: 'Scansione…', fetchingArt: 'Recupero copertine…',
     dropTitle: 'Trascina qui la cartella del gioco', or: 'oppure', browse: 'Sfoglia cartella',
     recentTitle: 'Giochi recenti', viewAll: 'Vedi tutto', recentEmpty: 'Niente installato — installa DLSS 5 in un gioco e comparirà qui.',
@@ -458,6 +471,7 @@ const S = {
   },
   tr: {
     navHome: 'Ana sayfa', navGames: 'Oyunlar', navHistory: 'Geçmiş', navSettings: 'Ayarlar', navAbout: 'Hakkında',
+    navOverlay: 'Yer paylaşımı',
     ready: 'Hazır', scanning: 'Taranıyor…', fetchingArt: 'Görseller alınıyor…',
     dropTitle: 'Oyun klasörünü buraya bırakın', or: 'veya', browse: 'Klasör seç',
     recentTitle: 'Son oyunlar', viewAll: 'Tümünü gör', recentEmpty: 'Henüz kurulum yok — bir oyuna DLSS 5 kurun, burada görünsün.',
@@ -487,6 +501,7 @@ const S = {
   },
   pl: {
     navHome: 'Start', navGames: 'Gry', navHistory: 'Historia', navSettings: 'Ustawienia', navAbout: 'O programie',
+    navOverlay: 'Nakładka',
     ready: 'Gotowe', scanning: 'Skanowanie…', fetchingArt: 'Pobieranie okładek…',
     dropTitle: 'Upuść folder gry tutaj', or: 'lub', browse: 'Wybierz folder',
     recentTitle: 'Ostatnie gry', viewAll: 'Zobacz wszystkie', recentEmpty: 'Nic jeszcze nie zainstalowano — zainstaluj DLSS 5 w grze, a pojawi się tutaj.',

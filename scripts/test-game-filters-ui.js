@@ -187,6 +187,56 @@ app.whenReady().then(async () => {
   assert.equal(await run(`$('setGroupGames').getAttribute('aria-label')`), 'تقسيم الألعاب حسب المتجر');
   fs.writeFileSync(path.join(output, 'grouping-settings-ar.png'), (await win.webContents.capturePage()).toPNG());
 
+  // Manual API selection is independent of detection and never auto-installs.
+  await run(`applyLang('en'); show('games'); openSheet(state.games[0].dir)`);
+  const apiReady = () => run(`new Promise(resolve => { const check = () => $('apiChoice') && !$('apiChoice').disabled ? resolve() : setTimeout(check, 15); check(); })`);
+  await apiReady();
+  assert.equal(await run(`$('apiChoice').value`), 'auto');
+  assert.equal(await run(`$('apiChoice').options.length`), 8);
+  const beforeApi = await run(`window.lab.testInstallCalls().length`);
+  for (const value of ['d3d9', 'd3d11', 'd3d12', 'vulkan', 'opengl', 'd3d10']) {
+    await select('apiChoice', value);
+    await apiReady();
+    assert.equal(await run(`$('apiChoice').value`), value);
+    assert.equal(await run(`$('doInstall').disabled`), value === 'd3d10');
+    assert.equal(await run(`window.lab.testInstallCalls().length`), beforeApi);
+    if (value === 'vulkan') {
+      assert.match(await run(`$('apiHint').textContent`), /shared ReShade layer/);
+      assert.doesNotMatch(await run(`$('backendHint').textContent`), /must not be active/);
+      await run(`document.getAnimations().forEach(animation => animation.finish()); new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+      assert.equal(await run(`getComputedStyle($('overlay')).opacity`), '1');
+      fs.writeFileSync(path.join(output, 'manual-vulkan-en.png'), (await win.webContents.capturePage()).toPNG());
+    }
+  }
+  // Correct a DX10/OpenGL misclassification; preserve the selected label and
+  // route after closing the sheet and changing language.
+  await run(`window.lab.testDetectedApi({ api: 'opengl', apiLabel: 'OpenGL', bitness: 64 }); openSheet(state.games[0].dir)`);
+  await apiReady();
+  await select('apiChoice', 'd3d11'); await apiReady();
+  assert.match(await run(`document.querySelector('#sheet .specs').textContent`), /DirectX 11/);
+  assert.equal(await run(`$('routeChoice').value`), 'feeder');
+  await run(`closeSheet(); applyLang('ar'); openSheet(state.games[0].dir)`);
+  await apiReady();
+  assert.equal(await run(`$('apiChoice').value`), 'd3d11');
+  assert.match(await run(`$('apiChoice').options[0].textContent`), /تلقائي/);
+  await run(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  await run(`document.getAnimations().forEach(animation => animation.finish())`);
+  fs.writeFileSync(path.join(output, 'manual-api-ar.png'), (await win.webContents.capturePage()).toPNG());
+  await select('apiChoice', 'auto'); await apiReady();
+  assert.match(await run(`document.querySelector('#sheet .specs').textContent`), /OpenGL/);
+  await run(`window.lab.testApiSaveFailure(true)`);
+  await select('apiChoice', 'vulkan'); await apiReady();
+  assert.equal(await run(`$('apiChoice').value`), 'auto', 'failed save does not claim the choice was saved');
+  assert.equal(await run(`$('job').textContent.includes(t('errApiSave'))`), true);
+  await run(`window.lab.testApiSaveFailure(false); window.lab.testDetectedApi({ api: 'dxgi', apiLabel: 'DirectX 12', bitness: 64 }); closeSheet(); applyLang('en'); show('about')`);
+  for (const value of ['github', 'releases']) await run(`document.querySelector('[data-project="${value}"]').click()`);
+  assert.deepEqual(await run(`window.lab.testProjectLinks()`), ['github', 'releases']);
+  assert.equal(await run(`$('projectLinkError').classList.contains('hidden')`), true);
+  await run(`window.lab.testProjectLinkFailure(true); document.querySelector('[data-project="releases"]').click()`);
+  assert.equal(await run(`$('projectLinkError').classList.contains('hidden')`), false);
+  await run(`window.lab.testProjectLinkFailure(false); document.querySelector('[data-project="releases"]').click(); new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  fs.writeFileSync(path.join(output, 'about-links-en.png'), (await win.webContents.capturePage()).toPNG());
+
   // The backend selector is opt-in: changing the control must not install.
   await run(`applyLang('en'); show('games'); openSheet(state.games[0].dir)`);
   const sheetReady = () => run(`new Promise(resolve => { const check = () => $('backendChoice') && !jobRunning ? resolve() : setTimeout(check, 15); check(); })`);
