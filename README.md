@@ -147,6 +147,13 @@ Compatibility varies by renderer and game. Xenia HUD correction remains experime
 - **Compatibility is not guaranteed.** Keep backups; existing mods may conflict. Not every reported game crash is fixed.
 - **Linux/Proton:** experimental community source only; no Linux binaries in this release.
 
+## Support
+
+DLSS 5 Swapper is free and MIT licensed. If it saved you an evening of
+fiddling, you can buy me a coffee.
+
+<p><a href="https://buymeacoffee.com/rakanki911"><img height="44" src="https://cdn.buymeacoffee.com/buttons/v2/lato-yellow.png" alt="Buy me a coffee"></a></p>
+
 ---
 
 Built by **Rakan Alkhaldi** · MIT · [Third-party credits and licences](THIRD_PARTY_NOTICES.md)
