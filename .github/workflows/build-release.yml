@@ -62,9 +62,13 @@ jobs:
             Write-Host "Downloading upstream release to extract payload..."
             $upstreamUrl = "https://github.com/rakanki911/DLSS5-Swapper/releases/download/v2.2.1/DLSS5-Swapper-2.2.1-portable.exe"
             Invoke-WebRequest -Uri $upstreamUrl -OutFile "upstream-portable.exe"
-            & "C:\Program Files\7-Zip\7z.exe" x "upstream-portable.exe" -o"temp_extracted" "resources\payload\*" -r
-            Move-Item "temp_extracted\resources\payload" "payload"
+            & "C:\Program Files\7-Zip\7z.exe" e "upstream-portable.exe" -o"temp_extracted" "*app-64.7z" -r -y
+            & "C:\Program Files\7-Zip\7z.exe" x "temp_extracted\app-64.7z" -o"temp_extracted\inner" "resources\payload\*" -r -y
+            Move-Item "temp_extracted\inner\resources\payload" "payload"
             Remove-Item "temp_extracted", "upstream-portable.exe" -Recurse -Force
+          }
+          if (-not (Test-Path "payload\streamline")) {
+            throw "Failed to extract payload: payload\streamline does not exist"
           }
           Write-Host "Payload ready:"
           Get-ChildItem "payload"
