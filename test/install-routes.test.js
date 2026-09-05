@@ -25,3 +25,21 @@ test('real native DX12 stays available; injected DLLs never select native by the
   assert.equal(recommendedRoute({ chosen, primaryDlss, install: { added: ['engine/nvngx_dlss.dll'] } }), 'feeder');
   assert.deepEqual(routesFor({ ...chosen, emulator: { key: 'xenia' } }), ['feeder']);
 });
+
+test('ambiguous DXGI and Windows Store DirectX 11/12 games allow RenoDX when native DLSS is present', () => {
+  const xboxDlss = { bitness: 64, api: 'dxgi', apiLabel: 'DirectX 11/12', hasNativeDlss: true };
+  assert.deepEqual(routesFor(xboxDlss), ['native', 'feeder', 'optiscaler']);
+  assert.equal(recommendedRoute({ chosen: xboxDlss, primaryDlss: { rel: 'Content\\nvngx_dlss.dll' } }), 'native');
+
+  const xboxNoDlss = { bitness: 64, api: 'dxgi', apiLabel: 'DirectX 11/12', hasNativeDlss: false };
+  assert.deepEqual(routesFor(xboxNoDlss), ['feeder']);
+  assert.equal(recommendedRoute({ chosen: xboxNoDlss, primaryDlss: null }), 'feeder');
+
+  const dxgiGeneric = { bitness: 64, api: 'dxgi', apiLabel: 'DirectX (DXGI)', hasNativeDlss: true };
+  assert.deepEqual(routesFor(dxgiGeneric), ['native', 'feeder', 'optiscaler']);
+  assert.equal(recommendedRoute({ chosen: dxgiGeneric, primaryDlss: { rel: 'bin\\nvngx_dlss.dll' } }), 'native');
+
+  const confirmedDx11 = { bitness: 64, api: 'dxgi', apiLabel: 'DirectX 11', hasNativeDlss: true };
+  assert.deepEqual(routesFor(confirmedDx11), ['feeder', 'optiscaler']);
+  assert.equal(recommendedRoute({ chosen: confirmedDx11, primaryDlss: { rel: 'nvngx_dlss.dll' } }), 'feeder');
+});

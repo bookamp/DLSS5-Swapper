@@ -1,0 +1,104 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release Tag (e.g. v2.2.1-1)'
+        required: true
+        default: 'v2.2.1-1'
+      title:
+        description: 'Release Title'
+        required: true
+        default: 'DLSS 5 Swapper v2.2.1 (DX12 & Windows Store RenoDX Support)'
+      notes:
+        description: 'Release Notes (Markdown summary of changes)'
+        required: false
+        default: |
+          ### What's Changed
+          - **RenoDX for DX12 & Windows Store Games**: 64-bit DXGI games with native DLSS detected now qualify for and recommend the RenoDX (Native DLSS) route, even if detected as `'DirectX 11/12'` or `'DirectX (DXGI)'`.
+          - **DirectX 12 Agility SDK Detection**: Added scanner detection for `D3D12Core.dll` and sibling module inspection.
+          - **Resilient In-Game Overlay Installation**: Fixed `EPERM` read errors when installing the overlay on encrypted Windows Store / Xbox executables by using detected architecture metadata.
+          - **Automatic Cache Invalidation**: Incremented scan cache version so existing library entries refresh automatically.
+      draft:
+        description: 'Mark as Draft?'
+        type: boolean
+        default: false
+      prerelease:
+        description: 'Mark as Pre-release?'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Windows Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Prepare build payload
+        shell: powershell
+        run: |
+          if (-not (Test-Path "payload\streamline")) {
+            Write-Host "Downloading upstream release to extract payload..."
+            $upstreamUrl = "https://github.com/rakanki911/DLSS5-Swapper/releases/download/v2.2.1/DLSS5-Swapper-2.2.1-portable.exe"
+            Invoke-WebRequest -Uri $upstreamUrl -OutFile "upstream-portable.exe"
+            & "C:\Program Files\7-Zip\7z.exe" x "upstream-portable.exe" -o"temp_extracted" "resources\payload\*" -r
+            Move-Item "temp_extracted\resources\payload" "payload"
+            Remove-Item "temp_extracted", "upstream-portable.exe" -Recurse -Force
+          }
+          Write-Host "Payload ready:"
+          Get-ChildItem "payload"
+
+      - name: Generate application icons
+        run: npm run icon
+
+      - name: Run test suite
+        shell: powershell
+        run: |
+          node --test --test-concurrency=1 (Get-ChildItem test/*.test.js | Select-Object -ExpandProperty FullName)
+
+      - name: Build Windows binaries
+        run: npx electron-builder --win portable nsis
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DLSS5-Swapper-Windows-Build
+          path: |
+            dist/*.exe
+          retention-days: 14
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.title || github.ref_name }}
+          body: ${{ github.event.inputs.notes || '' }}
+          generate_release_notes: ${{ github.event.inputs.notes == '' }}
+          draft: ${{ github.event.inputs.draft == 'true' }}
+          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
+          files: |
+            dist/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

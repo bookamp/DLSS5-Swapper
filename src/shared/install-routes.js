@@ -21,13 +21,16 @@
     if (api === 'd3d8') return target.bitness === 32 ? ['feeder'] : [];
     if (['d3d9', 'opengl', 'vulkan'].includes(api)) return !optiReason(target, api) ? ['feeder', 'optiscaler'] : ['feeder'];
     if (api !== 'dxgi') return [];
-    const routes = target.bitness === 32 || target.emulator || target.apiLabel !== 'DirectX 12' ? ['feeder'] : ['native', 'feeder'];
+    const isDx12 = target.dx12 || target.apiLabel === 'DirectX 12' ||
+      (['DirectX 11/12', 'DirectX (DXGI)'].includes(target.apiLabel) && Boolean(target.hasNativeDlss));
+    const routes = target.bitness === 32 || target.emulator || !isDx12 ? ['feeder'] : ['native', 'feeder'];
     if (!optiReason(target, api)) routes.push('optiscaler');
     return routes;
   }
   function recommendedRoute(scan, target = scan.chosen) {
-    const routes = routesFor(target);
     const nativeDlss = nativeDlssPresent(scan);
+    const effectiveTarget = target ? { ...target, hasNativeDlss: target.hasNativeDlss ?? nativeDlss } : target;
+    const routes = routesFor(effectiveTarget);
     const wanted = scan.install && scan.install.route === 'feeder'
       ? 'feeder' : nativeDlss ? 'native' : 'feeder';
     return routes.includes(wanted) ? wanted : (routes[0] || null);

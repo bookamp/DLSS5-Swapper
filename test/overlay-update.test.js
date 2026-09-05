@@ -95,3 +95,23 @@ test('another game keeps its overlay when this one is updated', (t) => {
   assert.ok(fs.existsSync(untouched.file), 'only the game being installed into is updated');
   assert.deepEqual(library(newBuild).list().installations.map(r => r.directory), [second]);
 });
+
+test('overlay install succeeds on encrypted or unreadable executable when expected architecture is given', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dlss5-overlay-encrypted-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const gameDir = realDir(root, 'game');
+  // Write a file that is not a valid PE or throws on openSync
+  const exe = path.join(gameDir, 'Resonance.exe');
+  fs.writeFileSync(exe, 'encrypted-bytes-placeholder');
+  const build = minimalPe(path.join(root, 'build', 'overlay.addon64'), { dll: true, filler: 2 });
+  const library = () => createOverlayLibrary(path.join(root, 'library'), build);
+
+  // Without expected architecture, readNative throws because it cannot read headers
+  assert.throws(() => library().install('builtin', exe), /Invalid Windows PE binary/);
+
+  // With expected architecture (e.g. 64), install succeeds and writes the overlay addon
+  const installed = library().install('builtin', exe, 64);
+  assert.ok(fs.existsSync(installed.file));
+  assert.equal(installed.architecture, 64);
+});

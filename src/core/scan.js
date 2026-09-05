@@ -219,6 +219,42 @@ function gameApiProfile(file) {
   return null;
 }
 
+function detectAgilitySdk(dir) {
+  if (!dir) return null;
+  const direct = findCaseInsensitive(dir, 'D3D12Core.dll');
+  if (direct) return { api: 'dxgi', label: 'DirectX 12', via: 'agility-sdk' };
+  const sub = findCaseInsensitive(dir, 'D3D12');
+  if (sub) {
+    try {
+      const core = findCaseInsensitive(sub, 'D3D12Core.dll');
+      if (core) return { api: 'dxgi', label: 'DirectX 12', via: 'agility-sdk:D3D12' };
+    } catch {}
+  }
+  return null;
+}
+
+function detectSiblingApi(dir, bitness) {
+  if (!dir) return null;
+  const agility = detectAgilitySdk(dir);
+  if (agility) return agility;
+  let entries = [];
+  try { entries = fs.readdirSync(dir); } catch { return null; }
+  for (const name of entries) {
+    const lower = name.toLowerCase();
+    if (!lower.endsWith('.dll') || NOT_A_GAME.test(name) || RESHADE_HOOKS.includes(lower)) continue;
+    const full = path.join(dir, name);
+    let b = null;
+    try { b = pe.getBitness(full); } catch {}
+    if (bitness && b && b !== bitness) continue;
+    let inner = null;
+    try {
+      inner = apiFromNames(pe.getImports(full)) || apiFromMarkers(full);
+    } catch {}
+    if (inner && inner.label === 'DirectX 12') return { ...inner, via: 'sibling:' + name };
+  }
+  return null;
+}
+
 // Three ways a game can reach Direct3D, tried in order of certainty:
 //   1. it imports the API itself;
 //   2. it is a protected build that resolves the API with LoadLibrary, so only
@@ -233,18 +269,28 @@ function detectApi(file, imports) {
   if (dynamic) return { ...dynamic, via: 'strings' };
 
   const dir = path.dirname(file);
+  const bitness = pe.getBitness(file);
+  const agility = detectAgilitySdk(dir);
+  if (agility) return agility;
+
   for (const name of imports.slice(0, 80)) {
     if (path.basename(name) !== name || /[\\/:]/.test(name)) continue;
     const sibling = findCaseInsensitive(dir, name);
     // System DLLs live in System32; only the game's own modules sit here.
-    if (!sibling || pe.getBitness(sibling) !== pe.getBitness(file)) continue;
+    if (!sibling || pe.getBitness(sibling) !== bitness) continue;
     const inner = apiFromNames(pe.getImports(sibling)) || apiFromMarkers(sibling);
     if (inner) return { ...inner, via: 'module:' + name };
   }
 
   const named = apiFromFileName(file);
   if (named) return { ...named, via: 'filename' };
-  return detectEngineApi(file);
+
+  const engine = detectEngineApi(file);
+  if (engine) return engine;
+
+  // When imports are empty (e.g. encrypted or packed executable) or didn't resolve
+  // an API, inspect sibling modules for D3D12/Agility SDK evidence.
+  return detectSiblingApi(dir, bitness);
 }
 
 // Small Source/GoldSrc dispatchers and several Ubisoft/UE2 games load their
@@ -387,9 +433,12 @@ async function scanGame(gameDir) {
     }
     let size = 0;
     try { size = fs.statSync(declared.path).size; } catch {}
-    const detected = detectApi(declared.path, pe.getImports(declared.path)) || {
-      api: 'dxgi', label: 'DirectX 11/12', via: 'MicrosoftGame.config'
-    };
+    const detected = detectApi(declared.path, pe.getImports(declared.path)) ||
+      detectAgilitySdk(path.dirname(declared.path)) ||
+      detectAgilitySdk(gameDir) ||
+      detectAgilitySdk(path.join(gameDir, 'Content')) || {
+        api: 'dxgi', label: 'DirectX 11/12', via: 'MicrosoftGame.config'
+      };
     exeCandidates.push({
       ...declared,
       size,

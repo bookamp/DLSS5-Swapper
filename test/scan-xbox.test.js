@@ -41,3 +41,33 @@ test('Xbox flat-file Content layout uses MicrosoftGame.config when its executabl
   assert.equal(scan.chosen.via, 'MicrosoftGame.config');
   assert.equal(scan.chosen.encrypted, true);
 });
+
+test('Xbox game with D3D12 Agility SDK is identified as DirectX 12', async (t) => {
+  const gameDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dlss5-xbox-agility-'));
+  t.after(() => fs.rmSync(gameDir, { recursive: true, force: true }));
+  const content = path.join(gameDir, 'Content');
+  const exe = path.join(content, 'Resonance.exe');
+  fs.mkdirSync(path.dirname(exe), { recursive: true });
+  fs.writeFileSync(exe, 'encrypted executable placeholder');
+  // Add Agility SDK in Content/D3D12
+  const agilityDir = path.join(content, 'D3D12');
+  fs.mkdirSync(agilityDir, { recursive: true });
+  fs.writeFileSync(path.join(agilityDir, 'D3D12Core.dll'), 'agility sdk binary placeholder');
+  fs.writeFileSync(path.join(content, 'MicrosoftGame.config'), [
+    '<?xml version="1.0" encoding="utf-8"?>',
+    '<Game configVersion="1">',
+    '  <ExecutableList>',
+    '    <Executable Name="Resonance.exe" Id="Game" Architecture="x64"/>',
+    '  </ExecutableList>',
+    '</Game>'
+  ].join('\r\n'));
+
+  const scan = await scanGame(gameDir);
+  assert.ok(scan.chosen);
+  assert.equal(scan.chosen.path, exe);
+  assert.equal(scan.chosen.bitness, 64);
+  assert.equal(scan.chosen.api, 'dxgi');
+  assert.equal(scan.chosen.apiLabel, 'DirectX 12');
+  assert.equal(scan.chosen.dx12, true);
+  assert.match(scan.chosen.via, /^agility-sdk/);
+});
