@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release Tag (leave blank to auto-increment, e.g. v2.2.1.2)'
+        description: 'Release Tag (leave blank to auto-increment, e.g. v2.2.1-1)'
         required: false
         default: ''
       title:
@@ -60,6 +60,7 @@ jobs:
         id: versioning
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_REPOSITORY: 'rakanki911/DLSS5-Swapper'
         run: node scripts/resolve-version.js "${{ github.event.inputs.tag }}" "${{ github.event.inputs.title }}"
 
       - name: Prepare build payload

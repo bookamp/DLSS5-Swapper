@@ -5,14 +5,30 @@ const { execSync } = require('child_process');
 
 const pkgPath = path.resolve(__dirname, '..', 'package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-const base = pkg.version;
+let base = pkg.version;
 
 const customTag = (process.argv[2] || '').trim();
 const customTitle = (process.argv[3] || '').trim();
 const repo = process.env.GITHUB_REPOSITORY || 'bookamp/DLSS5-Swapper';
+const upstreamRepo = process.env.UPSTREAM_REPOSITORY || 'rakanki911/DLSS5-Swapper';
 
 let ver;
 let tag;
+
+// Dynamically fetch upstream latest release tag if not overridden by explicit tag
+if (!customTag && !(process.env.GITHUB_REF && process.env.GITHUB_REF.startsWith('refs/tags/'))) {
+  try {
+    const upstreamRaw = execSync(`gh api repos/${upstreamRepo}/releases/latest --jq .tag_name`, {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore']
+    }).trim();
+    if (upstreamRaw) {
+      base = upstreamRaw.replace(/^v/, '');
+    }
+  } catch (err) {
+    console.warn(`Could not fetch upstream latest release from ${upstreamRepo}, falling back to ${base}`);
+  }
+}
 
 if (customTag) {
   tag = customTag.startsWith('v') ? customTag : `v${customTag}`;
@@ -23,10 +39,33 @@ if (customTag) {
 } else {
   let tags = [];
   try {
-    const raw = execSync(`gh api repos/${repo}/git/matching-refs/tags`, { encoding: 'utf8' });
+    const raw = execSync(`gh api repos/${repo}/git/matching-refs/tags`, {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore']
+    });
     tags = JSON.parse(raw).map(t => t.ref.replace(/^refs\/tags\//, ''));
   } catch (err) {
-    // If no tags or command fails, fallback to empty
+    // fallback to git tag if available
+    try {
+      const rawGit = execSync('git tag -l', { encoding: 'utf8' });
+      tags = rawGit.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    } catch {
+      // fallback to empty
+    }
+  }
+
+  try {
+    const relRaw = execSync(`gh release list --repo ${repo} --limit 50`, {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'ignore']
+    });
+    const relTags = relRaw
+      .split(/\r?\n/)
+      .map(l => l.split('\t')[2]?.trim())
+      .filter(Boolean);
+    tags.push(...relTags);
+  } catch (err) {
+    // ignore
   }
 
   const escaped = base.replace(/\./g, '\\.');
@@ -39,7 +78,7 @@ if (customTag) {
     .filter(n => n > 0);
 
   const next = nums.length ? Math.max(...nums) + 1 : 1;
-  ver = `${base}.${next}`;
+  ver = `${base}-${next}`;
   tag = `v${ver}`;
 }
 
