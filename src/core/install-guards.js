@@ -28,7 +28,7 @@ async function assertGameClosed(gameDir, exePath, runner = run) {
   if (matches.length) throw Object.assign(new Error(`Close the game and helper first: ${matches.map(p => p.Name).join(', ')}`), { code: 'errGameRunning' });
 }
 function gpuSupported(rows) {
-  return rows.some(row => /\bRTX\s*50\d{2}\b/i.test(row.name) &&
+  return rows.some(row => /\bRTX\s*(?:[2-5]0\d{2}|[A-Z]?\d{4})\b/i.test(row.name) &&
     Number(String(row.driver).split('.')[0]) * 100 + Number(String(row.driver).split('.')[1]) >= 61656);
 }
 async function gpuInfo(runner = run) {

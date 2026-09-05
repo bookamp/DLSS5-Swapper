@@ -39,8 +39,10 @@ test('OptiScaler configuration arms NR but preserves unrelated preferences', () 
 test('GPU requirements and process guards reject known unsupported/running targets', async () => {
   assert.equal(guards.gpuSupported([{ name: 'NVIDIA GeForce RTX 5090', driver: '616.56' }]), true);
   assert.equal(guards.gpuSupported([{ name: 'NVIDIA GeForce RTX 5090 Laptop GPU', driver: '617.00' }]), true);
-  assert.equal(guards.gpuSupported([{ name: 'NVIDIA GeForce RTX 4090', driver: '617.00' }]), false);
+  assert.equal(guards.gpuSupported([{ name: 'NVIDIA GeForce RTX 4090', driver: '617.00' }]), true);
+  assert.equal(guards.gpuSupported([{ name: 'NVIDIA GeForce GTX 1080', driver: '617.00' }]), false);
   assert.equal(guards.gpuSupported([{ name: 'NVIDIA GeForce RTX 5090', driver: '616.55' }]), false);
+  assert.equal(guards.gpuSupported([{ name: 'NVIDIA GeForce RTX 4090', driver: '616.55' }]), false);
   const root = path.resolve('test-fixture-game');
   const game = path.join(root, 'Game.exe');
   const rows = [{ Name: 'Game.exe', ExecutablePath: game, ProcessId: -1 }, { Name: 'Game.exe', ExecutablePath: null, ProcessId: -2 }, { Name: 'Other.exe', ExecutablePath: path.resolve('elsewhere', 'Other.exe'), ProcessId: -3 }];
