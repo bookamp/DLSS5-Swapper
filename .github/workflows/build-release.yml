@@ -57,11 +57,12 @@ jobs:
 
       - name: Prepare build payload
         shell: powershell
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if (-not (Test-Path "payload\streamline")) {
-            Write-Host "Downloading upstream release to extract payload..."
-            $upstreamUrl = "https://github.com/rakanki911/DLSS5-Swapper/releases/download/v2.2.1/DLSS5-Swapper-2.2.1-portable.exe"
-            Invoke-WebRequest -Uri $upstreamUrl -OutFile "upstream-portable.exe"
+            Write-Host "Downloading latest upstream release to extract payload..."
+            gh release download --repo rakanki911/DLSS5-Swapper --pattern "*portable.exe" --output "upstream-portable.exe" --clobber
             & "C:\Program Files\7-Zip\7z.exe" e "upstream-portable.exe" -o"temp_extracted" "*app-64.7z" -r -y
             & "C:\Program Files\7-Zip\7z.exe" x "temp_extracted\app-64.7z" -o"temp_extracted\inner" "resources\payload\*" -r -y
             Move-Item "temp_extracted\inner\resources\payload" "payload"
@@ -82,7 +83,7 @@ jobs:
           node --test --test-concurrency=1 (Get-ChildItem test/*.test.js | Select-Object -ExpandProperty FullName)
 
       - name: Build Windows binaries
-        run: npx electron-builder --win portable nsis
+        run: npx electron-builder --win portable nsis --publish never
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
