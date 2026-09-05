@@ -18,25 +18,53 @@ function readAt(fd, length, position) {
   return data;
 }
 
-function readNative(file, addon = true) {
-  const stat = fs.lstatSync(file);
+function readNative(file, addon = true, expectedArchitecture = null) {
+  let stat;
+  try {
+    stat = fs.lstatSync(file);
+  } catch (err) {
+    if (!addon && expectedArchitecture && (err.code === 'EPERM' || err.code === 'EACCES' || /operation not permitted|access is denied/i.test(err.message))) {
+      return { architecture: expectedArchitecture };
+    }
+    throw err;
+  }
   if (!stat.isFile() || stat.isSymbolicLink()) throw Error('Expected a regular Windows binary.');
-  const fd = fs.openSync(file, 'r');
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+  } catch (err) {
+    if (!addon && expectedArchitecture && (err.code === 'EPERM' || err.code === 'EACCES' || /operation not permitted|access is denied/i.test(err.message))) {
+      return { architecture: expectedArchitecture };
+    }
+    throw err;
+  }
   try {
     const opened = fs.fstatSync(fd);
-    if (!opened.isFile() || opened.size < 128) throw Error('Invalid Windows PE binary.');
+    if (!opened.isFile() || opened.size < 128) {
+      if (!addon && expectedArchitecture) return { architecture: expectedArchitecture };
+      throw Error('Invalid Windows PE binary.');
+    }
     if (addon && opened.size > MAX_ADDON_BYTES) throw Error('ReShade add-ons must not exceed 64 MB.');
     // Game executables only need architecture/type checks. Read the DOS and
     // COFF headers (88 bytes total), never the whole EXE or its hash. Large
     // Unreal Shipping executables must not inherit the add-on import limit.
     const dos = readAt(fd, 64, 0);
     const offset = dos.readUInt32LE(0x3c);
-    if (dos.readUInt16LE(0) !== 0x5a4d || offset < 64 || offset + 24 > opened.size) throw Error('Invalid Windows PE binary.');
+    if (dos.readUInt16LE(0) !== 0x5a4d || offset < 64 || offset + 24 > opened.size) {
+      if (!addon && expectedArchitecture) return { architecture: expectedArchitecture };
+      throw Error('Invalid Windows PE binary.');
+    }
     const coff = readAt(fd, 24, offset);
-    if (coff.readUInt32LE(0) !== 0x4550) throw Error('Invalid Windows PE binary.');
+    if (coff.readUInt32LE(0) !== 0x4550) {
+      if (!addon && expectedArchitecture) return { architecture: expectedArchitecture };
+      throw Error('Invalid Windows PE binary.');
+    }
     const machine = coff.readUInt16LE(4);
     const architecture = machine === 0x8664 ? 64 : machine === 0x14c ? 32 : 0;
-    if (!architecture) throw Error('Only x64 and x86 Windows binaries are supported.');
+    if (!architecture) {
+      if (!addon && expectedArchitecture) return { architecture: expectedArchitecture };
+      throw Error('Only x64 and x86 Windows binaries are supported.');
+    }
     const dll = !!(coff.readUInt16LE(22) & 0x2000);
     if (addon && (!dll || path.extname(file).toLowerCase() !== `.addon${architecture}`)) throw Error('Choose a .addon64 or .addon32 DLL with matching architecture.');
     if (!addon && (dll || path.extname(file).toLowerCase() !== '.exe')) throw Error('Choose the game executable, not a DLL.');
@@ -119,11 +147,11 @@ function createOverlayLibrary(root, builtinFile, forbiddenRoots = []) {
     fs.unlinkSync(entry.file);
     fs.unlinkSync(path.join(entries, `${id}.json`));
   }
-  function install(id, exe) {
+  function install(id, exe, expectedArchitecture = null) {
     const entry = resolve(id);
     if (!entry.ready) throw Error('Build the overlay add-on first.');
     const binary = readNative(entry.file);
-    const targetExe = readNative(exe, false);
+    const targetExe = readNative(exe, false, expectedArchitecture);
     if (binary.architecture !== targetExe.architecture) throw Error('Overlay and executable architectures do not match.');
     const targetDir = fs.realpathSync(path.dirname(exe));
     for (const forbidden of forbiddenRoots) if (inside(path.resolve(forbidden), targetDir)) throw Error('The main app and toolchain directories cannot be overlay targets.');

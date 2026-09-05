@@ -189,7 +189,7 @@ const posterDir = () => path.join(app.getPath('userData'), 'posters');
 const keyFor = (dir) => crypto.createHash('sha1').update(path.resolve(dir).toLowerCase()).digest('hex').slice(0, 16);
 // Bump when scan metadata or detection changes so an old wrong result is not
 // kept forever merely because the folder was scanned by an earlier release.
-const SCAN_RULES = 6;
+const SCAN_RULES = 7;
 
 function loadState() {
   try {
@@ -437,10 +437,10 @@ ipcMain.handle('scan', async (_event, dir) => {
     const result = {
       dir,
       ok: Boolean(scan.chosen),
-      installable: installRoutes.routesFor(scan.chosen).length > 0,
+      installable: installRoutes.routesFor({ ...scan.chosen, hasNativeDlss: installRoutes.nativeDlssPresent(scan) }).length > 0,
       api: scan.chosen ? scan.chosen.apiLabel : null,
       bitness: scan.chosen ? scan.chosen.bitness : null,
-      dx12: Boolean(scan.chosen && scan.chosen.apiLabel === 'DirectX 12'),
+      dx12: Boolean(scan.chosen && (scan.chosen.dx12 || scan.chosen.apiLabel === 'DirectX 12')),
       exe: scan.chosen ? scan.chosen.rel : null,
       reason: scan.emptyReason || null,
       dlss: dlss ? dlss.version : null,
