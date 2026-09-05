@@ -7,13 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release Tag (e.g. v2.2.1-1)'
-        required: true
-        default: 'v2.2.1-1'
+        description: 'Release Tag (leave blank to auto-increment, e.g. v2.2.1.2)'
+        required: false
+        default: ''
       title:
-        description: 'Release Title'
-        required: true
-        default: 'DLSS 5 Swapper v2.2.1 (DX12 & Windows Store RenoDX Support)'
+        description: 'Release Title (leave blank for automatic title)'
+        required: false
+        default: ''
       notes:
         description: 'Release Notes (Markdown summary of changes)'
         required: false
@@ -23,6 +23,7 @@ on:
           - **DirectX 12 Agility SDK Detection**: Added scanner detection for `D3D12Core.dll` and sibling module inspection.
           - **Resilient In-Game Overlay Installation**: Fixed `EPERM` read errors when installing the overlay on encrypted Windows Store / Xbox executables by using detected architecture metadata.
           - **Automatic Cache Invalidation**: Incremented scan cache version so existing library entries refresh automatically.
+          - **OptiScaler DLSS-NR for RTX 40 Series**: Unlocked the OptiScaler DLSS-NR route for RTX 40 series GPUs with driver 616.56+.
       draft:
         description: 'Mark as Draft?'
         type: boolean
@@ -54,6 +55,12 @@ jobs:
 
       - name: Install npm dependencies
         run: npm ci
+
+      - name: Resolve release version
+        id: versioning
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/resolve-version.js "${{ github.event.inputs.tag }}" "${{ github.event.inputs.title }}"
 
       - name: Prepare build payload
         shell: powershell
@@ -97,8 +104,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: ${{ github.event.inputs.title || github.ref_name }}
+          tag_name: ${{ steps.versioning.outputs.tag || github.ref_name }}
+          name: ${{ steps.versioning.outputs.title || github.ref_name }}
           body: ${{ github.event.inputs.notes || '' }}
           generate_release_notes: ${{ github.event.inputs.notes == '' }}
           draft: ${{ github.event.inputs.draft == 'true' }}

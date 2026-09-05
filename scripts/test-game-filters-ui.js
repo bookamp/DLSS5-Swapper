@@ -249,7 +249,7 @@ app.whenReady().then(async () => {
   assert.equal(await run(`Boolean($('routeChoice'))`), false);
   assert.equal(await run(`window.lab.testInstallCalls().length`), 0);
   assert.match(await run(`$('doInstall').textContent`), /OptiScaler/);
-  assert.match(await run(`$('backendHint').textContent`), /RTX 50/);
+  assert.match(await run(`$('backendHint').textContent`), /RTX (?:40|50)/);
   await run(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
   fs.writeFileSync(path.join(output, 'optiscaler-en.png'), (await win.webContents.capturePage()).toPNG());
   await run(`window.lab.testHoldInstall(); $('doInstall').click()`);
